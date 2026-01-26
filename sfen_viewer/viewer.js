@@ -38,6 +38,13 @@ const pvLinesDiv = document.getElementById('pv-lines');
 const playedMovesDiv = document.getElementById('played-moves');
 const applyPvButton = document.getElementById('apply-pv');
 const closeAnalysisButton = document.getElementById('close-analysis');
+const replayControlsDiv = document.getElementById('replay-controls');
+const replayStatus = document.getElementById('replay-status');
+const replayNextButton = document.getElementById('replay-next');
+const replayAdoptButton = document.getElementById('replay-adopt');
+const replayStopButton = document.getElementById('replay-stop');
+const handSenteDiv = document.getElementById('hand-sente');
+const handGoteDiv = document.getElementById('hand-gote');
 
 let allRecords = [];
 let currentUserName = null;
@@ -54,6 +61,13 @@ let manualSelection = null;
 let lastInfo = null;
 const FILES = ['9', '8', '7', '6', '5', '4', '3', '2', '1'];
 const RANKS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
+let replayState = null;
+// 手動選択状態（駒移動/打ち駒）
+let handSelection = null;
+const roleKanji = {
+  pawn: '歩', lance: '香', knight: '桂', silver: '銀', gold: '金',
+  bishop: '角', rook: '飛', king: '玉'
+};
 
 function showStatus(message, isError = false) {
   statusMessage.textContent = message;
@@ -295,22 +309,24 @@ function createBoardElement(record) {
 async function loadShogiOps() {
   if (shogiOpsPromise) return shogiOpsPromise;
   shogiOpsPromise = (async () => {
-    const [sfenMod, compatMod, utilMod] = await Promise.all([
-      import('./vendors/shogiops/sfen.js'),
-      import('./vendors/shogiops/compat.js'),
-      import('./vendors/shogiops/util.js')
-    ]);
-    return {
-      parseSfen: sfenMod.parseSfen,
-      makeSfen: sfenMod.makeSfen,
-      shogigroundMoveDests: compatMod.shogigroundMoveDests,
-      shogigroundDropDests: compatMod.shogigroundDropDests,
-      parseSquareName: utilMod.parseSquareName,
-      makeUsi: utilMod.makeUsi,
-      parseUsi: utilMod.parseUsi
-    };
-  })();
-  return shogiOpsPromise;
+  const [sfenMod, compatMod, utilMod] = await Promise.all([
+    import('./vendors/shogiops/sfen.js'),
+    import('./vendors/shogiops/compat.js'),
+    import('./vendors/shogiops/util.js'),
+    import('./vendors/shogiops/notation/japanese.js')
+  ]);
+  return {
+    parseSfen: sfenMod.parseSfen,
+    makeSfen: sfenMod.makeSfen,
+    shogigroundMoveDests: compatMod.shogigroundMoveDests,
+    shogigroundDropDests: compatMod.shogigroundDropDests,
+    parseSquareName: utilMod.parseSquareName,
+    makeUsi: utilMod.makeUsi,
+    parseUsi: utilMod.parseUsi,
+    makeJapaneseMoveOrDrop: (await import('./vendors/shogiops/notation/japanese.js')).makeJapaneseMoveOrDrop
+  };
+})();
+return shogiOpsPromise;
 }
 
 function resultValue(res) {
@@ -333,6 +349,24 @@ function squareNameToCoord(name) {
   const file = name.charAt(0);
   const rank = name.charAt(1);
   return { x: FILES.indexOf(file), y: RANKS.indexOf(rank) };
+}
+
+function makeJapaneseFromUsi(usi, pos, ops) {
+  try {
+    const md = ops.parseUsi(usi);
+    if (!md) return usi;
+    const clone = pos.clone();
+    const txt = ops.makeJapaneseMoveOrDrop(clone, md, undefined);
+    return txt || usi;
+  } catch (e) {
+    return usi;
+  }
+}
+
+function buildPosFromBase() {
+  if (!analysisState?.ops) return null;
+  const parsed = analysisState.ops.parseSfen('standard', analysisState.baseSfen, false);
+  return resultValue(parsed);
 }
 
 async function generateLegalMoves(pos, ops) {
@@ -385,8 +419,10 @@ function setAnalysisStatus(message, isError = false) {
 
 async function renderAnalysis() {
   if (!analysisState) return;
-  const { ops, pos, lastMove } = analysisState;
-  const sfen = ops.makeSfen(pos);
+  const viewPos = replayState ? replayState.pos : analysisState.pos;
+  const lastMove = replayState ? replayState.lastMove : analysisState.lastMove;
+  const { ops } = replayState || analysisState;
+  const sfen = ops.makeSfen(viewPos);
   const boardPart = sfen.split(' ')[0];
   const table = App.createBoardTable(boardPart);
   analysisBoard.innerHTML = '';
@@ -407,11 +443,32 @@ async function renderAnalysis() {
   });
   analysisBoard.appendChild(table);
   renderPlayedMoves();
+  renderReplayControls();
+  renderHands(viewPos);
 }
 
 function renderPlayedMoves() {
   if (!analysisState) return;
-  playedMovesDiv.innerHTML = analysisState.moves.map((m, idx) => `<div>${idx + 1}. ${m}</div>`).join('') || '<div class="text-gray-500">まだ指し手はありません。</div>';
+  if (!analysisState.ops) {
+    playedMovesDiv.innerHTML = '<div class="text-gray-500">まだ指し手はありません。</div>';
+    return;
+  }
+  const basePos = buildPosFromBase();
+  if (!basePos) {
+    playedMovesDiv.innerHTML = analysisState.moves.map((m, idx) => `<div>${idx + 1}. ${m}</div>`).join('') || '<div class="text-gray-500">まだ指し手はありません。</div>';
+    return;
+  }
+  const ops = analysisState.ops;
+  const lines = [];
+  for (let i = 0; i < analysisState.moves.length; i++) {
+    const usi = analysisState.moves[i];
+    const md = ops.parseUsi(usi);
+    if (!md) break;
+    const jp = ops.makeJapaneseMoveOrDrop(basePos, md, undefined) || usi;
+    lines.push(`<div>${i + 1}. ${jp}</div>`);
+    basePos.play(md);
+  }
+  playedMovesDiv.innerHTML = lines.join('') || '<div class="text-gray-500">まだ指し手はありません。</div>';
 }
 
 function updatePvLines(lines) {
@@ -420,21 +477,24 @@ function updatePvLines(lines) {
     pvLinesDiv.innerHTML = '<div class="text-gray-500">まだ推奨手順がありません。</div>';
     return;
   }
+  const basePosForLabel = analysisState?.pos ? analysisState.pos.clone() : null;
   lines.forEach(line => {
-    const wrap = document.createElement('div');
-    wrap.className = 'flex flex-wrap items-center gap-2';
+    const row = document.createElement('div');
+    row.className = 'flex flex-wrap items-center gap-2';
     const head = document.createElement('span');
-    head.textContent = `${line.multipv}. 評価 ${line.scoreText}`;
     head.className = 'text-xs font-semibold';
-    wrap.appendChild(head);
-    line.pv.forEach((move, idx) => {
-      const btn = document.createElement('button');
-      btn.className = 'btn-soft px-2 py-1 rounded-md';
-      btn.textContent = `${idx + 1}. ${move}`;
-      btn.addEventListener('click', () => applyMoveAndAnalyze(move));
-      wrap.appendChild(btn);
-    });
-    pvLinesDiv.appendChild(wrap);
+    let jpMove = line.pv?.[0] || '';
+    if (basePosForLabel && analysisState?.ops && line.pv?.[0]) {
+      jpMove = makeJapaneseFromUsi(line.pv[0], basePosForLabel, analysisState.ops) || jpMove;
+    }
+    head.textContent = `候補${line.multipv}: ${jpMove} / 評価 ${line.scoreText}`;
+    row.appendChild(head);
+    const replayBtn = document.createElement('button');
+    replayBtn.className = 'btn-soft px-2 py-1 rounded-md';
+    replayBtn.textContent = '手順を再現';
+    replayBtn.addEventListener('click', () => startReplay(line));
+    row.appendChild(replayBtn);
+    pvLinesDiv.appendChild(row);
   });
 }
 
@@ -460,7 +520,11 @@ function parseInfo(msg) {
     }
   }
   const scoreRaw = scoreMate !== null ? `mate ${scoreMate}` : scoreCp !== null ? (scoreCp / 100).toFixed(2) : '-';
-  const scoreText = scoreRaw === '-' ? '-' : (scoreRaw.startsWith('mate') ? scoreRaw : (Number(scoreRaw) >= 0 ? `+${scoreRaw}` : scoreRaw));
+  const scoreText = scoreRaw === '-'
+    ? '-'
+    : scoreRaw.startsWith('mate')
+      ? scoreRaw
+      : (Number(scoreRaw) >= 0 ? `+${scoreRaw}` : `${scoreRaw}`); // 先手有利プラス / 後手有利マイナス
   return { depth, nodes, nps, time, pv, multipv, scoreText };
 }
 
@@ -524,6 +588,10 @@ async function ensureEngine() {
 
 async function startEngineAnalysis() {
   if (!analysisState) return;
+  if (replayState) {
+    setAnalysisStatus('手順再現中は解析を開始できません。再現を終了してください。', true);
+    return;
+  }
   try {
     const eng = await ensureEngine();
     const sfen = analysisState.ops.makeSfen(analysisState.pos);
@@ -547,6 +615,119 @@ function stopEngineAnalysis() {
   setAnalysisStatus('解析を停止しました');
 }
 
+function startReplay(line) {
+  if (!analysisState || !line?.pv?.length) {
+    setAnalysisStatus('再現できる手順がありません', true);
+    return;
+  }
+  const basePos = analysisState.pos.clone();
+  replayState = {
+    ops: analysisState.ops,
+    pos: basePos,
+    line,
+    index: 0,
+    movesApplied: [],
+    lastMove: null
+  };
+  renderAnalysis();
+  renderReplayControls();
+  const jp = makeJapaneseFromUsi(line.pv[0], basePos, analysisState.ops);
+  setAnalysisStatus(`手順再現を開始: 候補${line.multipv} ${jp}`);
+}
+
+function advanceReplay() {
+  if (!replayState) {
+    setAnalysisStatus('再現を開始してください', true);
+    return;
+  }
+  if (replayState.index >= replayState.line.pv.length) {
+    setAnalysisStatus('これ以上手はありません');
+    return;
+  }
+  const move = replayState.line.pv[replayState.index];
+  const md = replayState.ops.parseUsi(move);
+  if (!md) {
+    setAnalysisStatus('手の解析に失敗しました', true);
+    return;
+  }
+  replayState.pos.play(md);
+  replayState.movesApplied.push(move);
+  replayState.lastMove = move.includes('*')
+    ? { from: null, to: squareNameToCoord(move.split('*')[1]) }
+    : { from: squareNameToCoord(move.slice(0, 2)), to: squareNameToCoord(move.slice(2, 4)) };
+  replayState.index += 1;
+  renderAnalysis();
+  renderReplayControls();
+}
+
+function adoptReplayPosition() {
+  if (!replayState) {
+    setAnalysisStatus('再現中の局面がありません', true);
+    return;
+  }
+  analysisState.pos = replayState.pos.clone();
+  analysisState.moves = analysisState.moves.concat(replayState.movesApplied);
+  analysisState.lastMove = replayState.lastMove;
+  replayState = null;
+  manualSelection = null;
+  renderAnalysis();
+  renderReplayControls();
+  refreshLegalMoves().then(startEngineAnalysis);
+  setAnalysisStatus('この局面で解析を再開しました');
+}
+
+function stopReplay() {
+  replayState = null;
+  manualSelection = null;
+  renderAnalysis();
+  renderReplayControls();
+  setAnalysisStatus('手順再現を終了しました');
+}
+
+function renderReplayControls() {
+  if (!replayState) {
+    replayStatus.textContent = '候補手の「手順を再現」を押してください。';
+    replayNextButton.disabled = true;
+    replayAdoptButton.disabled = true;
+    replayStopButton.disabled = true;
+    return;
+  }
+  const total = replayState.line.pv.length;
+  const idx = replayState.index;
+  const nextMove = replayState.line.pv[idx] ? makeJapaneseFromUsi(replayState.line.pv[idx], replayState.pos, replayState.ops) : 'なし';
+  replayStatus.textContent = `手順再現中: 候補${replayState.line.multipv} の ${idx}/${total} 手目（次: ${nextMove}）`;
+  replayNextButton.disabled = idx >= total;
+  replayAdoptButton.disabled = false;
+  replayStopButton.disabled = false;
+}
+
+function renderHands(pos) {
+  if (!handSenteDiv || !handGoteDiv || !pos?.hands) return;
+  const render = (color, el) => {
+    el.innerHTML = '';
+    const roles = ['rook', 'bishop', 'gold', 'silver', 'knight', 'lance', 'pawn'];
+    roles.forEach(role => {
+      const count = pos.hands[color]?.get?.(role) || 0;
+      if (!count) return;
+      const btn = document.createElement('button');
+      btn.className = 'btn-soft px-2 py-1 rounded-md';
+      btn.textContent = `${roleKanji[role] || role}${count > 1 ? `(${count})` : ''}`;
+      if (handSelection && handSelection.role === role && handSelection.color === color) {
+        btn.classList.add('bg-emerald-600');
+      }
+      btn.addEventListener('click', () => {
+        handSelection = { role, color };
+        manualSelection = null;
+        setAnalysisStatus('盤上のマスを選んで打ちます');
+        renderHands(pos);
+      });
+      el.appendChild(btn);
+    });
+  };
+  render('sente', handSenteDiv);
+  render('gote', handGoteDiv);
+}
+
 async function refreshLegalMoves() {
   if (!analysisState) return;
   legalMovesCache = await generateLegalMoves(analysisState.pos, analysisState.ops);
@@ -554,11 +735,12 @@ async function refreshLegalMoves() {
 
 function applyMoveAndAnalyze(usi) {
   if (!analysisState) return;
-  const { ops, pos } = analysisState;
+  if (replayState) return;
   if (!legalMovesCache.includes(usi)) {
     setAnalysisStatus('合法手ではありません', true);
     return;
   }
+  const { ops, pos } = analysisState;
   const md = ops.parseUsi(usi);
   if (!md) {
     setAnalysisStatus('手の解析に失敗しました', true);
@@ -576,12 +758,29 @@ function applyMoveAndAnalyze(usi) {
     return { from, to };
   })();
   manualSelection = null;
+  handSelection = null;
   renderAnalysis();
   refreshLegalMoves().then(startEngineAnalysis);
 }
 
 function handleBoardClick(x, y) {
   if (!analysisState) return;
+  if (replayState) {
+    setAnalysisStatus('手順再現中は盤操作できません。', true);
+    return;
+  }
+  if (handSelection) {
+    const sqName = `${FILES[x]}${RANKS[y]}`;
+    const candidate = legalMovesCache.find(m => {
+      if (!m.includes('*') || !m.endsWith(sqName)) return false;
+      const md = analysisState.ops.parseUsi(m);
+      return md && md.role === handSelection.role && analysisState.pos.turn === handSelection.color;
+    });
+    if (!candidate) { setAnalysisStatus('持ち駒の合法手ではありません', true); return; }
+    applyMoveAndAnalyze(candidate);
+    handSelection = null;
+    return;
+  }
   const { ops, pos } = analysisState;
   const sqName = `${FILES[x]}${RANKS[y]}`;
   const sq = ops.parseSquareName(sqName);
@@ -624,6 +823,7 @@ async function openAnalysis(record) {
       infos: new Map(),
       lastMove: null
     };
+    replayState = null;
     analysisModal.classList.remove('hidden');
     analysisModal.classList.add('flex');
     await refreshLegalMoves();
@@ -645,6 +845,7 @@ function resetAnalysis() {
     analysisState.moves = [];
     analysisState.lastMove = null;
     manualSelection = null;
+    replayState = null;
     refreshLegalMoves().then(() => {
       renderAnalysis();
       updatePvLines([]);
@@ -673,6 +874,7 @@ function undoAnalysisMove() {
       })()
       : null;
     manualSelection = null;
+    replayState = null;
     refreshLegalMoves().then(() => {
       renderAnalysis();
       startEngineAnalysis();
@@ -717,6 +919,9 @@ applyPvButton.addEventListener('click', () => {
   const best = analysisState.infos.get(1);
   if (best && best.pv && best.pv.length) applyMoveAndAnalyze(best.pv[0]);
 });
+replayNextButton.addEventListener('click', () => advanceReplay());
+replayAdoptButton.addEventListener('click', () => adoptReplayPosition());
+replayStopButton.addEventListener('click', () => stopReplay());
 closeAnalysisButton.addEventListener('click', () => {
   stopEngineAnalysis();
   analysisModal.classList.add('hidden');
@@ -724,10 +929,12 @@ closeAnalysisButton.addEventListener('click', () => {
   analysisState = null;
   manualSelection = null;
   legalMovesCache = [];
+  replayState = null;
   updateAnalysisInfo(null);
   setAnalysisStatus('');
   pvLinesDiv.innerHTML = '';
   playedMovesDiv.innerHTML = '';
+  replayStatus.textContent = '候補手の「手順を再現」を押してください。';
 });
 
 initializeApp();
