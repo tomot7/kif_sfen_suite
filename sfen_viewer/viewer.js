@@ -20,16 +20,40 @@ const pagination = document.getElementById('pagination');
 const prevPageButton = document.getElementById('prev-page');
 const nextPageButton = document.getElementById('next-page');
 const pageInfo = document.getElementById('page-info');
-const commentModal = document.getElementById('comment-modal');
-const commentTextarea = document.getElementById('comment-textarea');
-const saveCommentButton = document.getElementById('save-comment');
-const cancelCommentButton = document.getElementById('cancel-comment');
+const analysisModal = document.getElementById('analysis-modal');
+const analysisBoard = document.getElementById('analysis-board');
+const analysisStatus = document.getElementById('analysis-status');
+const infoDepth = document.getElementById('info-depth');
+const infoNodes = document.getElementById('info-nodes');
+const infoNps = document.getElementById('info-nps');
+const infoScore = document.getElementById('info-score');
+const infoTime = document.getElementById('info-time');
+const analysisMoveTimeInput = document.getElementById('analysis-movetime');
+const analysisMultiPvInput = document.getElementById('analysis-multipv');
+const analysisStartButton = document.getElementById('analysis-start');
+const analysisStopButton = document.getElementById('analysis-stop');
+const analysisResetButton = document.getElementById('analysis-reset');
+const analysisUndoButton = document.getElementById('analysis-undo');
+const pvLinesDiv = document.getElementById('pv-lines');
+const playedMovesDiv = document.getElementById('played-moves');
+const applyPvButton = document.getElementById('apply-pv');
+const closeAnalysisButton = document.getElementById('close-analysis');
 
 let allRecords = [];
 let currentUserName = null;
-let currentEditingSfen = null;
 let currentPage = 1;
 let targetUserName = '';
+let analysisState = null;
+let engineInstance = null;
+let engineReadyPromise = null;
+let engineInitialized = false;
+let shogiOpsPromise = null;
+let engineWaiters = [];
+let legalMovesCache = [];
+let manualSelection = null;
+let lastInfo = null;
+const FILES = ['9', '8', '7', '6', '5', '4', '3', '2', '1'];
+const RANKS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
 
 function showStatus(message, isError = false) {
   statusMessage.textContent = message;
@@ -39,6 +63,16 @@ function showStatus(message, isError = false) {
 
 function hideStatus() {
   statusDisplay.classList.add('hidden');
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 function renderUsers(users) {
@@ -205,11 +239,11 @@ function createBoardElement(record) {
   const buttonsContainer = document.createElement('div');
   buttonsContainer.className = 'grid grid-cols-2 gap-2 mt-2';
 
-  const commentButton = document.createElement('button');
-  commentButton.textContent = 'コメント';
-  commentButton.className = 'text-xs btn-soft px-3 py-2 rounded-md w-full';
-  commentButton.onclick = () => openCommentModal(sfen);
-  buttonsContainer.appendChild(commentButton);
+  const analysisButton = document.createElement('button');
+  analysisButton.textContent = 'AI解析';
+  analysisButton.className = 'text-xs btn-soft px-3 py-2 rounded-md w-full';
+  analysisButton.onclick = () => openAnalysis(record);
+  buttonsContainer.appendChild(analysisButton);
 
   const copyButton = document.createElement('button');
   copyButton.textContent = 'SFENコピー';
@@ -234,13 +268,6 @@ function createBoardElement(record) {
   buttonsContainer.appendChild(copyButton);
   infoDiv.appendChild(buttonsContainer);
 
-  const commentDisplayWrapper = document.createElement('div');
-  const commentDisplay = document.createElement('p');
-  commentDisplay.textContent = comment || 'コメントはありません';
-  commentDisplay.className = `comment-display comment-box text-xs p-2 mt-2 rounded-md whitespace-pre-wrap ${comment ? '' : 'empty'}`;
-  commentDisplayWrapper.appendChild(commentDisplay);
-  infoDiv.appendChild(commentDisplayWrapper);
-
   const displayName = targetUserInput.value.trim() || targetUserName || record.targetUserName || '';
   if (displayName) {
     const senteLosses = Math.max((userSente || 0) - (userSenteWins || 0) - (userSenteDraws || 0), 0);
@@ -264,26 +291,394 @@ function createBoardElement(record) {
   return wrapper;
 }
 
-function openCommentModal(sfen) {
-  currentEditingSfen = sfen;
-  const record = allRecords.find(r => r.sfen === sfen);
-  commentTextarea.value = record ? record.comment : '';
-  commentModal.classList.remove('hidden');
-  commentModal.classList.add('flex');
-  commentTextarea.focus();
+// --- AI解析関連 ---
+async function loadShogiOps() {
+  if (shogiOpsPromise) return shogiOpsPromise;
+  shogiOpsPromise = (async () => {
+    const [sfenMod, compatMod, utilMod] = await Promise.all([
+      import('./vendors/shogiops/sfen.js'),
+      import('./vendors/shogiops/compat.js'),
+      import('./vendors/shogiops/util.js')
+    ]);
+    return {
+      parseSfen: sfenMod.parseSfen,
+      makeSfen: sfenMod.makeSfen,
+      shogigroundMoveDests: compatMod.shogigroundMoveDests,
+      shogigroundDropDests: compatMod.shogigroundDropDests,
+      parseSquareName: utilMod.parseSquareName,
+      makeUsi: utilMod.makeUsi,
+      parseUsi: utilMod.parseUsi
+    };
+  })();
+  return shogiOpsPromise;
 }
 
-async function handleSaveComment() {
-  if (!currentEditingSfen || !currentUserName) return;
-  const record = allRecords.find(r => r.sfen === currentEditingSfen);
-  if (record) record.comment = commentTextarea.value;
-  await App.updateComment(currentUserName, currentEditingSfen, commentTextarea.value || '');
-  commentModal.classList.add('hidden');
-  commentModal.classList.remove('flex');
-  renderFilteredBoards();
-  currentEditingSfen = null;
+function resultValue(res) {
+  if (!res) return null;
+  if (res.isOk) return res.value;
+  if (res.ok) return res.value;
+  if (res._tag === 'Ok') return res.value;
+  return null;
 }
 
+async function parsePositionFromSfen(sfen) {
+  const ops = await loadShogiOps();
+  const parsed = ops.parseSfen('standard', sfen, false);
+  const pos = resultValue(parsed);
+  if (!pos) throw new Error('SFENの解析に失敗しました');
+  return { ops, pos };
+}
+
+function squareNameToCoord(name) {
+  const file = name.charAt(0);
+  const rank = name.charAt(1);
+  return { x: FILES.indexOf(file), y: RANKS.indexOf(rank) };
+}
+
+async function generateLegalMoves(pos, ops) {
+  const moves = [];
+  const ctx = pos.ctx();
+  const moveDests = ops.shogigroundMoveDests(pos);
+  moveDests.forEach((dests, fromName) => {
+    const from = ops.parseSquareName(fromName);
+    dests.forEach(destName => {
+      const to = ops.parseSquareName(destName);
+      const base = { from, to };
+      const normal = { ...base };
+      if (pos.isLegal(normal, ctx)) moves.push(ops.makeUsi(normal));
+      const promo = { ...base, promotion: true };
+      if (pos.isLegal(promo, ctx)) moves.push(ops.makeUsi(promo));
+    });
+  });
+  const dropDests = ops.shogigroundDropDests(pos);
+  dropDests.forEach((dests, pieceName) => {
+    const role = (pieceName.split(' ')[1] || '').trim();
+    dests.forEach(destName => {
+      const to = ops.parseSquareName(destName);
+      const drop = { role, to };
+      if (pos.isLegal(drop, ctx)) moves.push(ops.makeUsi(drop));
+    });
+  });
+  return moves;
+}
+
+function updateAnalysisInfo(info) {
+  if (!info) {
+    infoDepth.textContent = '-';
+    infoNodes.textContent = '-';
+    infoNps.textContent = '-';
+    infoScore.textContent = '-';
+    infoTime.textContent = '-';
+    return;
+  }
+  infoDepth.textContent = info.depth ?? '-';
+  infoNodes.textContent = info.nodes ?? '-';
+  infoNps.textContent = info.nps ?? '-';
+  infoScore.textContent = info.scoreText ?? '-';
+  infoTime.textContent = info.time ?? '-';
+}
+
+function setAnalysisStatus(message, isError = false) {
+  analysisStatus.textContent = message;
+  analysisStatus.classList.toggle('text-red-400', isError);
+}
+
+async function renderAnalysis() {
+  if (!analysisState) return;
+  const { ops, pos, lastMove } = analysisState;
+  const sfen = ops.makeSfen(pos);
+  const boardPart = sfen.split(' ')[0];
+  const table = App.createBoardTable(boardPart);
+  analysisBoard.innerHTML = '';
+  [...table.rows].forEach((tr, y) => {
+    [...tr.cells].forEach((td, x) => {
+      td.dataset.x = x;
+      td.dataset.y = y;
+      td.classList.add('cell-btn');
+      if (lastMove) {
+        if (lastMove.from && lastMove.from.x === x && lastMove.from.y === y) td.classList.add('last-move');
+        if (lastMove.to && lastMove.to.x === x && lastMove.to.y === y) td.classList.add('last-move');
+      }
+      if (manualSelection && manualSelection.x === x && manualSelection.y === y) {
+        td.classList.add('selected');
+      }
+      td.addEventListener('click', () => handleBoardClick(x, y));
+    });
+  });
+  analysisBoard.appendChild(table);
+  renderPlayedMoves();
+}
+
+function renderPlayedMoves() {
+  if (!analysisState) return;
+  playedMovesDiv.innerHTML = analysisState.moves.map((m, idx) => `<div>${idx + 1}. ${m}</div>`).join('') || '<div class="text-gray-500">まだ指し手はありません。</div>';
+}
+
+function updatePvLines(lines) {
+  pvLinesDiv.innerHTML = '';
+  if (!lines || !lines.length) {
+    pvLinesDiv.innerHTML = '<div class="text-gray-500">まだ推奨手順がありません。</div>';
+    return;
+  }
+  lines.forEach(line => {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex flex-wrap items-center gap-2';
+    const head = document.createElement('span');
+    head.textContent = `${line.multipv}. 評価 ${line.scoreText}`;
+    head.className = 'text-xs font-semibold';
+    wrap.appendChild(head);
+    line.pv.forEach((move, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn-soft px-2 py-1 rounded-md';
+      btn.textContent = `${idx + 1}. ${move}`;
+      btn.addEventListener('click', () => applyMoveAndAnalyze(move));
+      wrap.appendChild(btn);
+    });
+    pvLinesDiv.appendChild(wrap);
+  });
+}
+
+function parseInfo(msg) {
+  const parts = msg.trim().split(/\s+/);
+  if (!parts.length) return null;
+  let depth, nodes, nps, time, scoreCp = null, scoreMate = null, pv = [], multipv = 1;
+  for (let i = 0; i < parts.length; i++) {
+    const t = parts[i];
+    if (t === 'depth') depth = parseInt(parts[++i], 10);
+    else if (t === 'nodes') nodes = parseInt(parts[++i], 10);
+    else if (t === 'nps') nps = parseInt(parts[++i], 10);
+    else if (t === 'time') time = parseInt(parts[++i], 10);
+    else if (t === 'multipv') multipv = parseInt(parts[++i], 10) || 1;
+    else if (t === 'score') {
+      const type = parts[++i];
+      const val = parts[++i];
+      if (type === 'cp') scoreCp = parseInt(val, 10);
+      else if (type === 'mate') scoreMate = parseInt(val, 10);
+    } else if (t === 'pv') {
+      pv = parts.slice(i + 1);
+      break;
+    }
+  }
+  const scoreRaw = scoreMate !== null ? `mate ${scoreMate}` : scoreCp !== null ? (scoreCp / 100).toFixed(2) : '-';
+  const scoreText = scoreRaw === '-' ? '-' : (scoreRaw.startsWith('mate') ? scoreRaw : (Number(scoreRaw) >= 0 ? `+${scoreRaw}` : scoreRaw));
+  return { depth, nodes, nps, time, pv, multipv, scoreText };
+}
+
+function waitFor(pattern, timeout = 8000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), timeout);
+    engineWaiters.push({ pattern, resolve: (msg) => { clearTimeout(timer); resolve(msg); }, timer });
+  });
+}
+
+function handleEngineMessage(msg) {
+  engineWaiters = engineWaiters.filter(waiter => {
+    if (waiter.pattern.test(msg)) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(msg);
+      return false;
+    }
+    return true;
+  });
+  if (!analysisState) return;
+  if (msg.startsWith('info')) {
+    const parsed = parseInfo(msg);
+    if (parsed) {
+      analysisState.infos.set(parsed.multipv || 1, parsed);
+      const best = analysisState.infos.get(1) || parsed;
+      lastInfo = best;
+      updateAnalysisInfo(best);
+      const lines = Array.from(analysisState.infos.values()).sort((a, b) => (a.multipv || 1) - (b.multipv || 1)).map(info => ({
+        multipv: info.multipv || 1,
+        scoreText: info.scoreText,
+        pv: info.pv || []
+      }));
+      updatePvLines(lines);
+    }
+  }
+}
+
+async function ensureEngine() {
+  if (engineReadyPromise) return engineReadyPromise;
+  engineReadyPromise = (async () => {
+    if (!window.crossOriginIsolated) throw new Error('crossOriginIsolatedでないためエンジンを初期化できません。server.jsで配信してください。');
+    await loadShogiOps(); // ensure wasm cache after COOP
+    await loadScript('vendors/yaneuraou.k-p/lib/yaneuraou.k-p.js');
+    const wasmBinary = await fetch('vendors/yaneuraou.k-p/lib/yaneuraou.k-p.wasm').then(r => r.arrayBuffer());
+    const wasmMemory = new WebAssembly.Memory({ initial: 256, maximum: 256, shared: false });
+    engineInstance = await window.YaneuraOu_K_P({
+      wasmBinary,
+      locateFile: path => `vendors/yaneuraou.k-p/lib/${path}`,
+      wasmMemory
+    });
+    engineInstance.addMessageListener(handleEngineMessage);
+    engineInstance.postMessage('usi');
+    await waitFor(/usiok/);
+    engineInstance.postMessage('isready');
+    await waitFor(/readyok/);
+    engineInitialized = true;
+    return engineInstance;
+  })();
+  return engineReadyPromise;
+}
+
+async function startEngineAnalysis() {
+  if (!analysisState) return;
+  try {
+    const eng = await ensureEngine();
+    const sfen = analysisState.ops.makeSfen(analysisState.pos);
+    const multiPv = parseInt(analysisMultiPvInput.value, 10) || 3;
+    const moveTimeMs = Math.max(parseInt(analysisMoveTimeInput.value, 10) || 30, 1) * 1000;
+    eng.postMessage(`setoption name MultiPV value ${multiPv}`);
+    eng.postMessage(`position sfen ${sfen}`);
+    eng.postMessage('stop');
+    eng.postMessage(`go movetime ${moveTimeMs}`);
+    analysisState.infos = new Map();
+    updateAnalysisInfo(null);
+    setAnalysisStatus('解析中...');
+  } catch (e) {
+    setAnalysisStatus(e.message || '解析開始に失敗しました', true);
+  }
+}
+
+function stopEngineAnalysis() {
+  if (!engineInstance) return;
+  engineInstance.postMessage('stop');
+  setAnalysisStatus('解析を停止しました');
+}
+
+async function refreshLegalMoves() {
+  if (!analysisState) return;
+  legalMovesCache = await generateLegalMoves(analysisState.pos, analysisState.ops);
+}
+
+function applyMoveAndAnalyze(usi) {
+  if (!analysisState) return;
+  const { ops, pos } = analysisState;
+  if (!legalMovesCache.includes(usi)) {
+    setAnalysisStatus('合法手ではありません', true);
+    return;
+  }
+  const md = ops.parseUsi(usi);
+  if (!md) {
+    setAnalysisStatus('手の解析に失敗しました', true);
+    return;
+  }
+  pos.play(md);
+  analysisState.moves.push(usi);
+  analysisState.lastMove = (() => {
+    if (usi.includes('*')) {
+      const to = squareNameToCoord(usi.split('*')[1]);
+      return { from: null, to };
+    }
+    const from = squareNameToCoord(usi.slice(0, 2));
+    const to = squareNameToCoord(usi.slice(2, 4));
+    return { from, to };
+  })();
+  manualSelection = null;
+  renderAnalysis();
+  refreshLegalMoves().then(startEngineAnalysis);
+}
+
+function handleBoardClick(x, y) {
+  if (!analysisState) return;
+  const { ops, pos } = analysisState;
+  const sqName = `${FILES[x]}${RANKS[y]}`;
+  const sq = ops.parseSquareName(sqName);
+  const piece = pos.board.get(sq);
+  if (!manualSelection) {
+    if (!piece) { setAnalysisStatus('駒を選択してください', true); return; }
+    if (piece.color !== pos.turn) { setAnalysisStatus('手番の駒を選択してください', true); return; }
+    manualSelection = { x, y };
+    renderAnalysis();
+    setAnalysisStatus('移動先を選択してください');
+    return;
+  }
+  if (manualSelection.x === x && manualSelection.y === y) {
+    manualSelection = null;
+    renderAnalysis();
+    return;
+  }
+  const fromName = `${FILES[manualSelection.x]}${RANKS[manualSelection.y]}`;
+  const targets = legalMovesCache.filter(m => !m.includes('*') && m.startsWith(fromName) && m.slice(2, 4) === sqName);
+  if (!targets.length) {
+    setAnalysisStatus('合法手ではありません', true);
+    return;
+  }
+  let chosen = targets[0];
+  if (targets.length === 2 && targets[0].endsWith('+') !== targets[1].endsWith('+')) {
+    const promoCandidate = targets.find(m => m.endsWith('+'));
+    if (promoCandidate && window.confirm('成りますか？')) chosen = promoCandidate;
+  }
+  applyMoveAndAnalyze(chosen);
+}
+
+async function openAnalysis(record) {
+  try {
+    const { ops, pos } = await parsePositionFromSfen(record.sfen);
+    analysisState = {
+      ops,
+      pos,
+      baseSfen: record.sfen,
+      moves: [],
+      infos: new Map(),
+      lastMove: null
+    };
+    analysisModal.classList.remove('hidden');
+    analysisModal.classList.add('flex');
+    await refreshLegalMoves();
+    renderAnalysis();
+    updatePvLines([]);
+    updateAnalysisInfo(null);
+    setAnalysisStatus('解析の準備ができました');
+    startEngineAnalysis();
+  } catch (e) {
+    setAnalysisStatus(e.message || 'AI解析を開始できません', true);
+  }
+}
+
+function resetAnalysis() {
+  if (!analysisState) return;
+  parsePositionFromSfen(analysisState.baseSfen).then(({ ops, pos }) => {
+    analysisState.ops = ops;
+    analysisState.pos = pos;
+    analysisState.moves = [];
+    analysisState.lastMove = null;
+    manualSelection = null;
+    refreshLegalMoves().then(() => {
+      renderAnalysis();
+      updatePvLines([]);
+      updateAnalysisInfo(null);
+      startEngineAnalysis();
+    });
+  }).catch(e => setAnalysisStatus(e.message || '初期化に失敗しました', true));
+}
+
+function undoAnalysisMove() {
+  if (!analysisState || !analysisState.moves.length) return;
+  const moves = analysisState.moves.slice(0, -1);
+  parsePositionFromSfen(analysisState.baseSfen).then(({ ops, pos }) => {
+    for (const usi of moves) {
+      const md = ops.parseUsi(usi);
+      if (md) pos.play(md);
+    }
+    analysisState.ops = ops;
+    analysisState.pos = pos;
+    analysisState.moves = moves;
+    analysisState.lastMove = moves.length
+      ? (() => {
+        const last = moves[moves.length - 1];
+        if (last.includes('*')) return { from: null, to: squareNameToCoord(last.split('*')[1]) };
+        return { from: squareNameToCoord(last.slice(0, 2)), to: squareNameToCoord(last.slice(2, 4)) };
+      })()
+      : null;
+    manualSelection = null;
+    refreshLegalMoves().then(() => {
+      renderAnalysis();
+      startEngineAnalysis();
+    });
+  }).catch(e => setAnalysisStatus(e.message || '一手戻しに失敗しました', true));
+}
 async function updateStorageStatus() {
   const estimate = await App.estimateStorage();
   if (!estimate) {
@@ -312,7 +707,27 @@ userMaxWinrateInput.addEventListener('input', () => { currentPage = 1; renderFil
 userMinCountInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 dateFromInput.addEventListener('change', () => { currentPage = 1; renderFilteredBoards(); });
 dateToInput.addEventListener('change', () => { currentPage = 1; renderFilteredBoards(); });
-cancelCommentButton.addEventListener('click', () => commentModal.classList.add('hidden'));
-saveCommentButton.addEventListener('click', handleSaveComment);
+
+analysisStartButton.addEventListener('click', startEngineAnalysis);
+analysisStopButton.addEventListener('click', stopEngineAnalysis);
+analysisResetButton.addEventListener('click', resetAnalysis);
+analysisUndoButton.addEventListener('click', undoAnalysisMove);
+applyPvButton.addEventListener('click', () => {
+  if (!analysisState || !analysisState.infos) return;
+  const best = analysisState.infos.get(1);
+  if (best && best.pv && best.pv.length) applyMoveAndAnalyze(best.pv[0]);
+});
+closeAnalysisButton.addEventListener('click', () => {
+  stopEngineAnalysis();
+  analysisModal.classList.add('hidden');
+  analysisModal.classList.remove('flex');
+  analysisState = null;
+  manualSelection = null;
+  legalMovesCache = [];
+  updateAnalysisInfo(null);
+  setAnalysisStatus('');
+  pvLinesDiv.innerHTML = '';
+  playedMovesDiv.innerHTML = '';
+});
 
 initializeApp();

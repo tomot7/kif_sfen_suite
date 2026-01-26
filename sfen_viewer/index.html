@@ -2,8 +2,17 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+  <meta http-equiv="Cross-Origin-Embedder-Policy" content="credentialless">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SFEN局面ビューア</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "@badrap/result": "./vendors/@badrap/result/dist/index.js"
+      }
+    }
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
@@ -97,19 +106,67 @@
     </div>
   </div>
 
-  <div id="comment-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <div id="analysis-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop fixed inset-0 bg-black opacity-50"></div>
-    <div class="modal-card rounded-lg shadow-xl w-full max-w-md p-6 z-10">
-      <h3 class="text-lg font-bold text-gray-900 mb-4">コメントを編集</h3>
-      <textarea id="comment-textarea" rows="4" class="input-dark w-full p-2 rounded-md"></textarea>
-      <div class="mt-4 flex justify-end space-x-3">
-        <button id="cancel-comment" class="px-4 py-2 btn-soft rounded-md">キャンセル</button>
-        <button id="save-comment" class="px-4 py-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600">保存</button>
+    <div class="modal-card rounded-lg shadow-xl w-full max-w-5xl p-4 sm:p-6 z-10">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="text-lg font-bold text-gray-900">AI解析</h3>
+        <button id="close-analysis" class="btn-soft px-3 py-2 rounded-md text-sm">閉じる</button>
+      </div>
+      <div id="analysis-status" class="text-sm text-gray-500 mb-3"></div>
+      <div class="panel-card rounded-md p-3 mb-3">
+        <div id="analysis-info" class="text-sm space-y-1">
+          <div>深さ: <span id="info-depth">-</span> / ノード: <span id="info-nodes">-</span> / NPS: <span id="info-nps">-</span></div>
+          <div>評価値: <span id="info-score">-</span> / 経過: <span id="info-time">-</span> ms</div>
+          <div class="flex flex-wrap gap-3 items-center text-xs">
+            <label class="flex items-center gap-1">解析時間(秒)
+              <input id="analysis-movetime" type="number" value="30" min="1" class="w-24 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm">
+            </label>
+            <label class="flex items-center gap-1">MultiPV
+              <select id="analysis-multipv" class="w-24 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="5">5</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <div class="panel-card rounded-md p-3">
+            <div id="analysis-board" class="flex justify-center"></div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <button id="analysis-start" class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold py-2 px-3 rounded-md">解析開始</button>
+              <button id="analysis-stop" class="btn-soft text-sm py-2 px-3 rounded-md">停止</button>
+              <button id="analysis-reset" class="btn-soft text-sm py-2 px-3 rounded-md">初期局面に戻す</button>
+              <button id="analysis-undo" class="btn-soft text-sm py-2 px-3 rounded-md">一手戻す</button>
+            </div>
+          </div>
+          <div class="panel-card rounded-md p-3 mt-3">
+            <h4 class="font-semibold mb-2 text-sm">合法手</h4>
+            <div id="legal-moves" class="flex flex-wrap gap-2 text-xs"></div>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div class="panel-card rounded-md p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="font-semibold text-sm">AI推奨手順</h4>
+              <button id="apply-pv" class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold py-2 px-3 rounded-md">先頭の手を指す</button>
+            </div>
+            <div id="pv-lines" class="text-xs space-y-1 max-h-48 overflow-y-auto"></div>
+          </div>
+          <div class="panel-card rounded-md p-3">
+            <h4 class="font-semibold mb-2 text-sm">現在の手順</h4>
+            <div id="played-moves" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <script src="app.js"></script>
-  <script src="viewer.js"></script>
+  <script type="module" src="viewer.js"></script>
 </body>
 </html>
