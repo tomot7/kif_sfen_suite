@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SFEN局面ビューア</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="text-gray-100">
+  <div class="container mx-auto p-2 sm:p-4 md:p-8 mobile-tight">
+    <header class="text-center mb-8">
+      <h1 class="text-3xl md:text-4xl font-bold text-gray-900">SFEN局面ビューア</h1>
+      <p class="mt-2 text-gray-600">保存済みデータから局面を一覧表示します。</p>
+      <div class="mt-4 flex flex-wrap justify-center gap-3 text-sm">
+        <a href="../index.html" class="text-emerald-400 hover:underline">トップへ戻る</a>
+        <span class="text-gray-400">|</span>
+        <a href="../data_manager/index.html" class="text-emerald-400 hover:underline">データ管理</a>
+        <span class="text-gray-400">|</span>
+        <a href="../kif_to_sfen/index.html" class="text-emerald-400 hover:underline">KIF→SFEN 変換へ</a>
+      </div>
+    </header>
+
+    <div class="grid lg:grid-cols-4 gap-8">
+      <div class="lg:col-span-1 space-y-8">
+        <div class="glass-panel rounded-xl shadow-lg p-4 sm:p-6">
+          <h3 class="text-lg font-medium text-gray-700">保存済みデータ（ユーザー単位）</h3>
+          <div id="storage-status" class="text-xs text-gray-500 my-2"></div>
+          <ul id="saved-files-list" class="space-y-3 mt-4 max-h-80 overflow-y-auto pr-2"></ul>
+        </div>
+      </div>
+
+      <div class="lg:col-span-3">
+        <div class="glass-panel rounded-xl shadow-lg p-4 sm:p-6 mb-6 sm:mb-8">
+          <h3 class="block mb-4 text-lg font-medium text-gray-700">表示オプション</h3>
+          <div class="flex flex-wrap items-center gap-6">
+            <div>
+              <label for="min-count" class="block text-sm font-medium text-gray-700">出現回数の下限</label>
+              <input type="number" id="min-count" value="1" min="1" class="w-24 mt-1 rounded-md shadow-sm sm:text-sm">
+            </div>
+            <div>
+              <label for="min-move" class="block text-sm font-medium text-gray-700">開始手数</label>
+              <input type="number" id="min-move" value="1" min="1" class="w-24 mt-1 rounded-md shadow-sm sm:text-sm">
+            </div>
+            <div>
+              <label for="page-size" class="block text-sm font-medium text-gray-700">1ページ件数</label>
+              <input type="number" id="page-size" value="60" min="1" class="w-24 mt-1 rounded-md shadow-sm sm:text-sm">
+              <p class="mt-1 text-xs text-gray-500">ページングで分割表示します。</p>
+            </div>
+            <div>
+              <label for="date-from" class="block text-sm font-medium text-gray-700">開始日</label>
+              <input type="date" id="date-from" class="w-36 mt-1 rounded-md shadow-sm sm:text-sm">
+            </div>
+            <div>
+              <label for="date-to" class="block text-sm font-medium text-gray-700">終了日</label>
+              <input type="date" id="date-to" class="w-36 mt-1 rounded-md shadow-sm sm:text-sm">
+            </div>
+            <div class="self-end">
+              <button id="apply-settings" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">表示を更新</button>
+            </div>
+            <div class="min-w-[220px]">
+              <label for="target-user" class="block text-sm font-medium text-gray-700">対象ユーザー名</label>
+              <input type="text" id="target-user" placeholder="CSVに含まれる場合は自動反映" class="mt-1 w-full rounded-md shadow-sm sm:text-sm">
+              <p class="mt-1 text-xs text-gray-500">表示ラベルのみ変更され、集計値はデータの内容を使用します。</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="status-display" class="status-panel my-4 p-4 text-center rounded-lg">
+          <p id="status-message">保存済みデータからユーザーを選択してください。</p>
+        </div>
+
+        <div id="pagination" class="hidden mb-4 flex items-center justify-center gap-3 text-sm">
+          <button id="prev-page" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100">前へ</button>
+          <span id="page-info" class="text-gray-600"></span>
+          <button id="next-page" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100">次へ</button>
+        </div>
+
+        <div id="boards-container" class="boards-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="comment-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-black opacity-50"></div>
+    <div class="modal-card rounded-lg shadow-xl w-full max-w-md p-6 z-10">
+      <h3 class="text-lg font-bold text-gray-900 mb-4">コメントを編集</h3>
+      <textarea id="comment-textarea" rows="4" class="input-dark w-full p-2 rounded-md"></textarea>
+      <div class="mt-4 flex justify-end space-x-3">
+        <button id="cancel-comment" class="px-4 py-2 btn-soft rounded-md">キャンセル</button>
+        <button id="save-comment" class="px-4 py-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>

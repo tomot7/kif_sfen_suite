@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KIF to SFEN 変換・分析ツール</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', 'Inter', sans-serif;
+            background: radial-gradient(1200px 800px at 10% 10%, rgba(16,185,129,0.25), transparent 60%),
+                        radial-gradient(1000px 700px at 90% 20%, rgba(34,197,94,0.22), transparent 55%),
+                        linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98));
+        }
+        .text-gray-900, .text-gray-800 { color: #f8fafc !important; }
+        .text-gray-700, .text-gray-600, .text-gray-500 { color: #e2e8f0 !important; }
+        .text-gray-400 { color: #cbd5e1 !important; }
+        .glass-panel {
+            background: rgba(16, 185, 129, 0.16) !important;
+            border: 1px solid rgba(16, 185, 129, 0.28) !important;
+            backdrop-filter: blur(14px);
+        }
+        input, textarea, select {
+            color: #f8fafc;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+        input::placeholder, textarea::placeholder {
+            color: #cfe7db;
+        }
+        .glass-surface {
+            background: rgba(15, 23, 42, 0.08);
+        }
+        .custom-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .custom-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .tab-button.active {
+            border-color: #4f46e5; /* indigo-600 */
+            color: #4f46e5; /* indigo-600 */
+        }
+        .dark .tab-button.active {
+             border-color: #818cf8; /* indigo-400 */
+            color: #818cf8; /* indigo-400 */
+        }
+    </style>
+</head>
+<body class="text-gray-100">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">KIF to SFEN 変換・分析ツール</h1>
+            <p class="mt-2 text-gray-600 dark:text-gray-400">KIF形式の棋譜をSFEN形式に変換、または一括処理してCSVを出力します。</p>
+            <div class="mt-4 flex flex-wrap justify-center gap-3 text-sm">
+                <a href="../index.html" class="text-emerald-400 hover:underline">トップへ戻る</a>
+                <span class="text-gray-400">|</span>
+                <a href="../sfen_viewer/index.html" class="text-emerald-400 hover:underline">ビューア</a>
+                <span class="text-gray-400">|</span>
+                <a href="../data_manager/index.html" class="text-emerald-400 hover:underline">データ管理</a>
+            </div>
+        </header>
+
+        <main class="glass-panel rounded-xl shadow-lg p-6 md:p-8">
+            
+            <!-- Tabs -->
+            <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
+                <nav class="flex -mb-px space-x-6" aria-label="Tabs">
+                    <button id="tab-file" class="tab-button active shrink-0 border-b-2 font-medium px-1 pb-4 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 border-transparent">ファイル変換</button>
+                    <button id="tab-text" class="tab-button shrink-0 border-b-2 font-medium px-1 pb-4 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 border-transparent">テキスト入力</button>
+                    <button id="tab-batch" class="tab-button shrink-0 border-b-2 font-medium px-1 pb-4 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 border-transparent">一括処理 (CSV)</button>
+                </nav>
+            </div>
+
+            <!-- Content Panes -->
+            <div id="content-file">
+                <label class="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">1. KIF/KIFU ファイルを選択</label>
+                <div class="flex items-center justify-center w-full">
+                    <label for="dropzone-file" class="flex flex-col items-center justify-center w-full h-48 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:hover:border-gray-500 dark:hover:bg-gray-600 transition">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                             <svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h10a4 4 0 014 4v6a4 4 0 01-4 4H7z"></path><path  stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m3-3H7"></path></svg>
+                            <p id="file-label" class="mb-2 text-sm text-gray-500 dark:text-gray-400"><span class="font-semibold">クリックしてアップロード</span>またはドラッグ＆ドロップ</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">.kif または .kifu ファイル</p>
+                            <p id="file-name" class="mt-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400"></p>
+                        </div>
+                        <input id="dropzone-file" type="file" class="hidden" accept=".kif,.kifu">
+                    </label>
+                </div>
+            </div>
+
+            <div id="content-text" class="hidden">
+                <label for="kif-text" class="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">1. KIF テキストを貼り付け</label>
+                <textarea id="kif-text" rows="10" class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="ここにKIF形式の棋譜を貼り付けてください..."></textarea>
+            </div>
+            
+            <div id="content-batch" class="hidden">
+                 <label for="directory-picker" class="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">1. フォルダを選択 (KIFファイルを含む)</label>
+                <input type="file" id="directory-picker" webkitdirectory multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">選択したフォルダ内のすべての.kif/.kifuファイルを処理し、各局面の出現回数を集計したCSVファイルを生成します。</p>
+                
+                <div class="mt-6 space-y-4">
+                    <h3 class="text-lg font-medium text-gray-700 dark:text-gray-300">オプション</h3>
+                    <div class="relative flex items-center gap-x-4">
+                        <label for="target-user-name" class="font-medium text-gray-900 dark:text-gray-100">集計対象ユーザー名:</label>
+                        <input id="target-user-name" name="target-user-name" type="text" placeholder="例: 田中 太郎" class="flex-1 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">このユーザーの先手/後手回数を集計します。</p>
+                    </div>
+                    <div class="relative flex items-center gap-x-4">
+                        <label for="batch-format" class="font-medium text-gray-900 dark:text-gray-100">出力形式:</label>
+                        <select id="batch-format" class="rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            <option value="csv">CSV (標準)</option>
+                            <option value="jsonl">JSONL (軽量)</option>
+                        </select>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">軽量なJSONLはCSVより小さくなります。</p>
+                    </div>
+                    <div class="relative flex items-start">
+                        <div class="flex h-6 items-center">
+                            <input id="exclude-single" name="exclude-single" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                        </div>
+                        <div class="ml-3 text-sm leading-6">
+                            <label for="exclude-single" class="font-medium text-gray-900 dark:text-gray-100">出現回数1回の局面を除外する</label>
+                            <p class="text-gray-500 dark:text-gray-400">データノイズを減らし、頻出局面に絞り込みます。</p>
+                        </div>
+                    </div>
+                     <div class="relative flex items-center gap-x-4">
+                        <label for="min-move-number" class="font-medium text-gray-900 dark:text-gray-100">開始手数を指定:</label>
+                        <input id="min-move-number" name="min-move-number" type="number" value="1" min="1" class="w-24 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">手以降の局面を分析対象とします。</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="text-center my-6">
+                 <button id="execute-button" class="custom-button w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none" disabled>
+                    実行
+                </button>
+            </div>
+
+            <div id="status-display" class="hidden my-4 p-4 text-center bg-blue-100 dark:bg-blue-900 border border-blue-400 dark:border-blue-700 text-blue-700 dark:text-blue-200 rounded-lg">
+                <p id="status-message"></p>
+            </div>
+
+            <div id="error-display" class="hidden my-4 p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 rounded-lg">
+                <h3 class="font-bold">エラーが発生しました</h3>
+                <p id="error-message"></p>
+            </div>
+
+            <div id="result-container" class="hidden">
+                <div class="flex justify-between items-center mb-2">
+                     <h2 class="text-xl font-semibold text-gray-800 dark:text-white">変換結果 (SFEN)</h2>
+                    <button id="copy-button" class="custom-button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                        全コピー
+                    </button>
+                </div>
+                <textarea id="sfen-output" rows="15" class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm" readonly></textarea>
+                 <div id="copy-feedback" class="text-center mt-2 text-green-600 dark:text-green-400 font-medium opacity-0 transition-opacity duration-300">コピーしました！</div>
+            </div>
+        </main>
+        
+        <footer class="text-center mt-8 text-sm text-gray-500 dark:text-gray-400">
+            <p>&copy; 2025 KIF to SFEN Converter. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- 定数定義 ---
+        const PIECES = { '歩': 'P', '香': 'L', '桂': 'N', '銀': 'S', '金': 'G', '角': 'B', '飛': 'R', '玉': 'K', '王': 'K', 'と': '+P', '成香': '+L', '杏': '+L', '成桂': '+N', '圭': '+N', '成銀': '+S', '全': '+S', '馬': '+B', '龍': '+R', '竜': '+R' };
+        const KANJI_NUM = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+        const ZENKAKU_NUM = { '１': 1, '２': 2, '３': 3, '４': 4, '５': 5, '６': 6, '７': 7, '８': 8, '９': 9 };
+        const SFEN_HAND_ORDER = ['R', 'B', 'G', 'S', 'N', 'L', 'P'];
+
+        // --- DOM要素 ---
+        const tabs = { file: document.getElementById('tab-file'), text: document.getElementById('tab-text'), batch: document.getElementById('tab-batch')};
+        const contents = { file: document.getElementById('content-file'), text: document.getElementById('content-text'), batch: document.getElementById('content-batch') };
+        const fileInput = document.getElementById('dropzone-file');
+        const fileNameDisplay = document.getElementById('file-name');
+        const kifTextInput = document.getElementById('kif-text');
+        const directoryPicker = document.getElementById('directory-picker');
+        const executeButton = document.getElementById('execute-button');
+        const sfenOutput = document.getElementById('sfen-output');
+        const errorDisplay = document.getElementById('error-display');
+        const errorMessage = document.getElementById('error-message');
+        const statusDisplay = document.getElementById('status-display');
+        const statusMessage = document.getElementById('status-message');
+        const resultContainer = document.getElementById('result-container');
+        const copyButton = document.getElementById('copy-button');
+        const copyFeedback = document.getElementById('copy-feedback');
+        const excludeSingleCheckbox = document.getElementById('exclude-single');
+        const minMoveNumberInput = document.getElementById('min-move-number');
+        const targetUserNameInput = document.getElementById('target-user-name');
+        const batchFormatSelect = document.getElementById('batch-format');
+
+        let activeTab = 'file';
+        let selectedFile = null;
+        let selectedDirectoryFiles = null;
+        
+        // --- タブ切り替えロジック ---
+        Object.keys(tabs).forEach(tabKey => {
+            tabs[tabKey].addEventListener('click', () => {
+                activeTab = tabKey;
+                Object.keys(tabs).forEach(k => {
+                    tabs[k].classList.toggle('active', k === tabKey);
+                    contents[k].classList.toggle('hidden', k !== tabKey);
+                });
+                resultContainer.classList.add('hidden'); // 結果をクリア
+                validateInput();
+            });
+        });
+        
+        // --- 入力検証と実行ボタンの有効化 ---
+        const validateInput = () => {
+            let enabled = false;
+            if (activeTab === 'file' && selectedFile) {
+                enabled = true;
+            } else if (activeTab === 'text' && kifTextInput.value.trim() !== '') {
+                enabled = true;
+            } else if (activeTab === 'batch' && selectedDirectoryFiles && selectedDirectoryFiles.length > 0) {
+                enabled = true;
+            }
+            executeButton.disabled = !enabled;
+        };
+
+        // --- イベントリスナー ---
+        fileInput.addEventListener('change', (e) => {
+            selectedFile = e.target.files[0];
+            fileNameDisplay.textContent = selectedFile ? selectedFile.name : '';
+            validateInput();
+        });
+
+        const dropzone = fileInput.parentElement.parentElement;
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dark:border-indigo-500', 'border-indigo-500'); });
+        dropzone.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dark:border-indigo-500', 'border-indigo-500'); });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropzone.classList.remove('dark:border-indigo-500', 'border-indigo-500');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change'));
+            }
+        });
+
+        kifTextInput.addEventListener('input', validateInput);
+        directoryPicker.addEventListener('change', (e) => {
+            selectedDirectoryFiles = e.target.files;
+            validateInput();
+        });
+
+        executeButton.addEventListener('click', () => {
+            hideError();
+            hideStatus();
+            resultContainer.classList.add('hidden');
+
+            try {
+                if (activeTab === 'file') {
+                    if (!selectedFile) return;
+                    const encoding = selectedFile.name.toLowerCase().endsWith('.kifu') ? 'UTF-8' : 'Shift_JIS';
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const sfenList = processKif(e.target.result);
+                            sfenOutput.value = sfenList.join('\n');
+                            resultContainer.classList.remove('hidden');
+                        } catch (err) { showError(err.message); console.error(err); }
+                    };
+                    reader.onerror = () => { showError(`ファイルの読み込みに失敗しました。`); };
+                    reader.readAsText(selectedFile, encoding);
+                } else if (activeTab === 'text') {
+                    const sfenList = processKif(kifTextInput.value);
+                    sfenOutput.value = sfenList.join('\n');
+                    resultContainer.classList.remove('hidden');
+                } else if (activeTab === 'batch') {
+                    processBatch(selectedDirectoryFiles);
+                }
+            } catch (err) {
+                showError(err.message);
+                console.error(err);
+            }
+        });
+        
+        copyButton.addEventListener('click', () => {
+            sfenOutput.select();
+            document.execCommand('copy');
+            sfenOutput.blur();
+            copyFeedback.classList.remove('opacity-0');
+            setTimeout(() => { copyFeedback.classList.add('opacity-0'); }, 2000);
+        });
+
+        // --- 一括処理関数 ---
+        function processBatch(files) {
+            const sfenCounts = new Map();
+            const kifFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.kif') || f.name.toLowerCase().endsWith('.kifu'));
+            let processedCount = 0;
+            const targetUserName = targetUserNameInput.value.trim();
+
+            if (kifFiles.length === 0) {
+                showError("対象フォルダにKIF/KIFUファイルが見つかりません。");
+                return;
+            }
+
+            showStatus(`処理中... (0 / ${kifFiles.length})`);
+
+            const promises = kifFiles.map(file => new Promise((resolve) => {
+                const reader = new FileReader();
+                const encoding = file.name.toLowerCase().endsWith('.kifu') ? 'UTF-8' : 'Shift_JIS';
+                reader.onload = (e) => {
+                    try {
+                        const kifText = e.target.result;
+                        const { sfenList, result, senteName, goteName, gameDate } = parseKifWithMeta(kifText);
+                        sfenList.forEach(sfen => {
+                            const current = sfenCounts.get(sfen) || {
+                                count: 0,
+                                senteWins: 0,
+                                goteWins: 0,
+                                draws: 0,
+                                userSente: 0,
+                                userGote: 0,
+                                userSenteWins: 0,
+                                userSenteDraws: 0,
+                                userGoteWins: 0,
+                                userGoteDraws: 0,
+                                gameDate: ''
+                            };
+                            current.count += 1;
+                            if (result === 'sente') current.senteWins += 1;
+                            else if (result === 'gote') current.goteWins += 1;
+                            else if (result === 'draw') current.draws += 1;
+
+                            if (targetUserName) {
+                                if (senteName && senteName.includes(targetUserName)) {
+                                    current.userSente += 1;
+                                    if (result === 'sente') current.userSenteWins += 1;
+                                    else if (result === 'draw') current.userSenteDraws += 1;
+                                }
+                                if (goteName && goteName.includes(targetUserName)) {
+                                    current.userGote += 1;
+                                    if (result === 'gote') current.userGoteWins += 1;
+                                    else if (result === 'draw') current.userGoteDraws += 1;
+                                }
+                            }
+
+                            if (gameDate) {
+                                current.gameDate = pickLatestDate(current.gameDate, gameDate);
+                            }
+
+                            sfenCounts.set(sfen, current);
+                        });
+                    } catch (e) {
+                         console.warn(`ファイル ${file.name} の処理中にエラーが発生しました: ${e.message}`);
+                    } finally {
+                        processedCount++;
+                        showStatus(`処理中... (${processedCount} / ${kifFiles.length})`);
+                        resolve();
+                    }
+                };
+                reader.onerror = () => {
+                     console.warn(`ファイル ${file.name} の読み込みに失敗しました。`);
+                     processedCount++;
+                     showStatus(`処理中... (${processedCount} / ${kifFiles.length})`);
+                     resolve();
+                };
+                reader.readAsText(file, encoding);
+            }));
+
+            Promise.all(promises).then(() => {
+                hideStatus();
+                if (sfenCounts.size === 0) {
+                    showError("有効な棋譜を1件も処理できませんでした。");
+                    return;
+                }
+
+                const excludeSingle = excludeSingleCheckbox.checked;
+                const minMoveNumber = parseInt(minMoveNumberInput.value, 10) || 1;
+
+                let sfenArray = Array.from(sfenCounts.entries());
+                const filteredSfen = sfenArray.filter(([sfen, stats]) => {
+                    const moveNumber = parseInt(sfen.split(' ').pop(), 10);
+                    const isMoveOk = moveNumber >= minMoveNumber;
+                    const isCountOk = !excludeSingle || stats.count > 1;
+                    return isMoveOk && isCountOk;
+                });
+                
+                if (filteredSfen.length === 0) {
+                    showStatus("指定された条件に一致する局面は見つかりませんでした。");
+                    return;
+                }
+
+                const sortedSfen = filteredSfen.sort((a, b) => b[1].count - a[1].count);
+                
+                let folderName = 'batch_result';
+                const firstFile = kifFiles[0];
+                if (firstFile && firstFile.webkitRelativePath) {
+                    const pathParts = firstFile.webkitRelativePath.split('/');
+                    if (pathParts.length > 1) {
+                        folderName = pathParts[0];
+                    }
+                }
+
+                let filename = `${folderName}_sfen_counts`;
+                if (minMoveNumber > 1) {
+                    filename += `_min-move-${minMoveNumber}`;
+                }
+                if (excludeSingle) {
+                    filename += `_exclude-single`;
+                }
+                const format = batchFormatSelect.value;
+
+                let blob;
+                if (format === 'jsonl') {
+                    filename += '.jsonl';
+                    const jsonlRows = sortedSfen.map(([sfen, stats]) => JSON.stringify({
+                        s: sfen,
+                        dt: stats.gameDate || '',
+                        user_name: targetUserName,
+                        c: stats.count,
+                        sw: stats.senteWins,
+                        gw: stats.goteWins,
+                        d: stats.draws,
+                        u: targetUserName,
+                        us: stats.userSente,
+                        usw: stats.userSenteWins,
+                        usd: stats.userSenteDraws,
+                        ug: stats.userGote,
+                        ugw: stats.userGoteWins,
+                        ugd: stats.userGoteDraws
+                    }));
+                    const jsonlContent = jsonlRows.join("\n");
+                    blob = new Blob([jsonlContent], { type: 'application/json' });
+                } else {
+                    filename += '.csv';
+                    const csvHeader = "SFEN,対局日時,user_name,出現回数,先手勝利数,後手勝利数,引分数,対象ユーザー名,ユーザー先手数,ユーザー先手勝利数,ユーザー先手引分数,ユーザー後手数,ユーザー後手勝利数,ユーザー後手引分数,コメント\n";
+                    const csvRows = sortedSfen.map(([sfen, stats]) => {
+                        const safeUser = targetUserName.replace(/"/g, '""');
+                        const safeDate = (stats.gameDate || '').replace(/"/g, '""');
+                        return `"${sfen}","${safeDate}","${safeUser}",${stats.count},${stats.senteWins},${stats.goteWins},${stats.draws},"${safeUser}",${stats.userSente},${stats.userSenteWins},${stats.userSenteDraws},${stats.userGote},${stats.userGoteWins},${stats.userGoteDraws},""`;
+                    });
+                    const csvContent = csvHeader + csvRows.join("\n");
+                    blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+                }
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showStatus(`${kifFiles.length} ファイルを処理し、「${filename}」をダウンロードしました。`);
+            });
+        }
+        
+        // --- 将棋のロジック (クラス定義) ---
+        class ShogiGame {
+            constructor() { this.initGame(); }
+            initGame() {
+                this.board = Array(9).fill(null).map(() => Array(9).fill(null));
+                this.hands = { b: {}, w: {} };
+                this.turn = 'b';
+                this.moveNumber = 1;
+                this.lastMove = null;
+                this.initBoardFromSfen();
+            }
+            initBoardFromSfen(sfenBoard = 'lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL') {
+                const rows = sfenBoard.split('/');
+                for (let y = 0; y < 9; y++) {
+                    let x = 0;
+                    for (const char of rows[y]) {
+                        if (char === '+') continue;
+                        if (isNaN(parseInt(char))) {
+                            let piece = char;
+                             if(rows[y][rows[y].indexOf(char)-1] === '+') { piece = '+' + piece; }
+                            this.board[y][x] = piece;
+                            x++;
+                        } else { x += parseInt(char); }
+                    }
+                }
+            }
+            toSfen() {
+                let boardStr = '';
+                for (let y = 0; y < 9; y++) {
+                    let emptyCount = 0;
+                    for (let x = 0; x < 9; x++) {
+                        const piece = this.board[y][x];
+                        if (piece) {
+                            if (emptyCount > 0) { boardStr += emptyCount; emptyCount = 0; }
+                            boardStr += piece;
+                        } else { emptyCount++; }
+                    }
+                    if (emptyCount > 0) { boardStr += emptyCount; }
+                    if (y < 8) { boardStr += '/'; }
+                }
+                let handStr = '';
+                for (const owner of ['b', 'w']) {
+                    for (const piece of SFEN_HAND_ORDER) {
+                        const hand = this.hands[owner];
+                        if (hand[piece] > 0) {
+                            if (hand[piece] > 1) { handStr += hand[piece]; }
+                            handStr += (owner === 'b' ? piece : piece.toLowerCase());
+                        }
+                    }
+                }
+                if (handStr === '') { handStr = '-'; }
+                return `${boardStr} ${this.turn} ${handStr} ${this.moveNumber}`;
+            }
+            applyKifMove(move) {
+                const { piece, to, from, promote, isDrop } = this.parseKifMove(move);
+                const toRow = to.y - 1, toCol = 9 - to.x;
+                const sfenPiece = PIECES[piece];
+                if (!sfenPiece) { throw new Error(`指し手 ${this.moveNumber}: 未知の駒「${piece}」`); }
+
+                if (isDrop) {
+                    if (this.board[toRow][toCol]) { throw new Error(`指し手 ${this.moveNumber}: ${to.x}${to.y} は空ではありません (駒打ち)`); }
+                    const hand = this.turn === 'b' ? this.hands.b : this.hands.w;
+                    const sfenPieceType = sfenPiece.replace('+', '');
+                    if (!hand[sfenPieceType] || hand[sfenPieceType] <= 0) { throw new Error(`指し手 ${this.moveNumber}: ${piece} の持ち駒がありません。`); }
+                    hand[sfenPieceType]--;
+                    this.board[toRow][toCol] = this.turn === 'b' ? sfenPieceType.toUpperCase() : sfenPieceType.toLowerCase();
+                } else {
+                    const fromRow = from.y - 1, fromCol = 9 - from.x;
+                    const movingPiece = this.board[fromRow][fromCol];
+                    if (!movingPiece) { throw new Error(`指し手 ${this.moveNumber}: ${from.x}${from.y} に動かす駒がありません。`); }
+
+                    const capturedPiece = this.board[toRow][toCol];
+                    if (capturedPiece) { this.addPieceToHand(capturedPiece); }
+                    
+                    this.board[fromRow][fromCol] = null;
+                    let newPiece = movingPiece;
+                    if (promote && !movingPiece.startsWith('+')) {
+                        newPiece = '+' + movingPiece.toUpperCase();
+                        if (this.turn === 'w') newPiece = newPiece.toLowerCase();
+                    }
+                    this.board[toRow][toCol] = newPiece;
+                }
+                this.lastMove = { to: { x: to.x, y: to.y } };
+                this.turn = (this.turn === 'b') ? 'w' : 'b';
+                this.moveNumber++;
+            }
+            addPieceToHand(capturedPiece) {
+                const unpromotedPiece = capturedPiece.replace('+', '').toUpperCase();
+                const hand = this.turn === 'b' ? this.hands.b : this.hands.w;
+                hand[unpromotedPiece] = (hand[unpromotedPiece] || 0) + 1;
+            }
+            parseKifMove(kifMoveStr) {
+                const timeMatch = kifMoveStr.match(/\s+\(.+\/.+\)$/);
+                const movePart = timeMatch ? kifMoveStr.substring(0, timeMatch.index) : kifMoveStr;
+                let remainingStr = movePart.trim();
+
+                let to, from = null, piece, promote = false, isDrop = false;
+
+                const fromMatch = remainingStr.match(/\((\d{2})\)/);
+                if (fromMatch) { from = { x: parseInt(fromMatch[1][0]), y: parseInt(fromMatch[1][1]) }; remainingStr = remainingStr.replace(fromMatch[0], ''); }
+                if (remainingStr.endsWith('成')) { promote = true; remainingStr = remainingStr.slice(0, -1); }
+                else if (remainingStr.endsWith('打')) { isDrop = true; remainingStr = remainingStr.slice(0, -1); }
+
+                if (remainingStr.startsWith('同')) {
+                    if (!this.lastMove) throw new Error("初手で '同' は使えません。");
+                    to = { ...this.lastMove.to };
+                    piece = remainingStr.slice(1).trim().replace(/　/g,'');
+                } else {
+                    const coordStr = remainingStr.slice(0, 2);
+                    piece = remainingStr.slice(2).trim().replace(/　/g,'');
+                    if(!ZENKAKU_NUM[coordStr[0]] || !KANJI_NUM[coordStr[1]]) { throw new Error(`指し手 ${this.moveNumber}: 不正な座標です: ${coordStr}`); }
+                    to = { x: ZENKAKU_NUM[coordStr[0]], y: KANJI_NUM[coordStr[1]] };
+                }
+                
+                if (piece === '') {
+                    throw new Error(`指し手 ${this.moveNumber}: 駒名を特定できませんでした。棋譜記述: "${kifMoveStr}"`);
+                }
+
+                if (!from && !isDrop) {
+                    from = this.findSource(piece, to);
+                    if (!from) {
+                        const KANJI_NUM_REV = Object.fromEntries(Object.entries(KANJI_NUM).map(([k, v]) => [v, k]));
+                        throw new Error(`指し手 ${this.moveNumber}: ${piece} を ${to.x}${KANJI_NUM_REV[to.y]} へ動かす駒が見つかりません。`);
+                    }
+                }
+                return { piece, to, from, promote, isDrop };
+            }
+            findSource(pieceKanji, to) {
+                if (!PIECES[pieceKanji]) throw new Error(`内部エラー: 未知の駒名「${pieceKanji}」がfindSourceに渡されました。`);
+                const sfenPieceType = PIECES[pieceKanji].replace('+', '');
+                for (let y = 0; y < 9; y++) {
+                    for (let x = 0; x < 9; x++) {
+                        const boardPiece = this.board[y][x];
+                        if (!boardPiece) continue;
+                        const pieceOwner = (boardPiece.toLowerCase() === boardPiece) ? 'w' : 'b';
+                        if (this.turn === pieceOwner && boardPiece.toUpperCase().replace('+', '') === sfenPieceType) {
+                            // TODO: 厳密な合法手判定。現在は最初に見つかったものを返す。
+                            return { x: 9 - x, y: y + 1 };
+                        }
+                    }
+                }
+                return null;
+            }
+        }
+        function processKif(kifData) {
+            return parseKifWithMeta(kifData).sfenList;
+        }
+
+        function parseKifWithMeta(kifData) {
+            const { senteName, goteName, gameDate } = extractKifHeader(kifData);
+            const game = new ShogiGame();
+            const sfenList = [];
+            let result = 'unknown';
+            sfenList.push(game.toSfen());
+            const lines = kifData.split(/\r\n|\n|\r/);
+            const moveRegex = /^\s*(\d+)\s+/;
+            for (const line of lines) {
+                if (!moveRegex.test(line)) {
+                    continue; 
+                }
+                const match = line.match(moveRegex);
+                const moveNumber = match ? parseInt(match[1], 10) : null;
+                const moveStr = line.replace(moveRegex, '').trim();
+                if (moveStr === '') continue;
+
+                const detected = detectResultFromMove(moveStr, moveNumber);
+                if (detected) {
+                    result = detected;
+                    break;
+                }
+
+                game.applyKifMove(moveStr);
+                sfenList.push(game.toSfen());
+            }
+            return { sfenList, result, senteName, goteName, gameDate };
+        }
+
+        function extractKifHeader(kifData) {
+            const lines = kifData.split(/\r\n|\n|\r/);
+            const moveRegex = /^\s*\d+\s+/;
+            let senteName = '';
+            let goteName = '';
+            let gameDate = '';
+            for (const line of lines) {
+                if (moveRegex.test(line)) break;
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                const match = trimmed.match(/^(先手|後手)\s*[:：]\s*(.+)$/);
+                if (match) {
+                    if (match[1] === '先手') senteName = match[2].trim();
+                    if (match[1] === '後手') goteName = match[2].trim();
+                }
+                if (!gameDate) {
+                    const dateMatch = trimmed.match(/^(開始日時|対局日時|対局日|日時)\s*[:：]\s*(.+)$/);
+                    if (dateMatch) {
+                        gameDate = normalizeDateString(dateMatch[2].trim());
+                    }
+                }
+            }
+            return { senteName, goteName, gameDate };
+        }
+
+        function normalizeDateString(raw) {
+            if (!raw) return '';
+            const ymdMatch = raw.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+            if (ymdMatch) {
+                const y = ymdMatch[1];
+                const m = ymdMatch[2].padStart(2, '0');
+                const d = ymdMatch[3].padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            const jpMatch = raw.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+            if (jpMatch) {
+                const y = jpMatch[1];
+                const m = jpMatch[2].padStart(2, '0');
+                const d = jpMatch[3].padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            return raw;
+        }
+
+        function pickLatestDate(current, next) {
+            if (!current) return next || '';
+            if (!next) return current;
+            const c = Date.parse(current);
+            const n = Date.parse(next);
+            if (isNaN(c) || isNaN(n)) return next || current;
+            return n > c ? next : current;
+        }
+
+        function detectResultFromMove(moveStr, moveNumber) {
+            const isSenteTurn = moveNumber ? (moveNumber % 2 === 1) : null;
+            const lossKeywords = ['投了', '詰み', '切れ負け', '時間切れ', '反則負け'];
+            const winKeywords = ['反則勝ち', '入玉勝ち'];
+            const drawKeywords = ['千日手', '持将棋', '引き分け'];
+
+            if (drawKeywords.some(k => moveStr.includes(k))) return 'draw';
+            if (winKeywords.some(k => moveStr.includes(k))) {
+                if (isSenteTurn === null) return 'unknown';
+                return isSenteTurn ? 'sente' : 'gote';
+            }
+            if (lossKeywords.some(k => moveStr.includes(k)) || moveStr.includes('中断')) {
+                if (moveStr.includes('中断')) return 'unknown';
+                if (isSenteTurn === null) return 'unknown';
+                return isSenteTurn ? 'gote' : 'sente';
+            }
+            return null;
+        }
+        
+        // --- UI補助関数 ---
+        function showError(message) { errorMessage.textContent = message; errorDisplay.classList.remove('hidden'); }
+        function hideError() { errorDisplay.classList.add('hidden'); }
+        function showStatus(message) { statusMessage.textContent = message; statusDisplay.classList.remove('hidden'); }
+        function hideStatus() { statusDisplay.classList.add('hidden'); }
+
+        validateInput(); // 初期状態の検証
+    </script>
+</body>
+</html>

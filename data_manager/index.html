@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SFENデータ管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../sfen_viewer/styles.css" />
+</head>
+<body class="text-gray-100">
+  <div class="container mx-auto p-2 sm:p-4 md:p-8 mobile-tight">
+    <header class="text-center mb-8">
+      <h1 class="text-3xl md:text-4xl font-bold text-gray-900">SFENデータ管理</h1>
+      <p class="mt-2 text-gray-600">データの登録・削除・ユーザー管理を行います。</p>
+      <div class="mt-4 flex flex-wrap justify-center gap-3 text-sm">
+        <a href="../index.html" class="text-emerald-400 hover:underline">トップへ戻る</a>
+        <span class="text-gray-400">|</span>
+        <a href="../sfen_viewer/index.html" class="text-emerald-400 hover:underline">ビューア</a>
+        <span class="text-gray-400">|</span>
+        <a href="../kif_to_sfen/index.html" class="text-emerald-400 hover:underline">KIF→SFEN 変換へ</a>
+      </div>
+    </header>
+
+    <div class="grid lg:grid-cols-4 gap-8">
+      <div class="lg:col-span-1 space-y-8">
+        <div class="glass-panel rounded-xl shadow-lg p-4 sm:p-6">
+          <label for="csv-file" class="block mb-2 text-lg font-medium text-gray-700">CSV/JSONファイルを選択</label>
+          <input type="file" id="csv-file" accept=".csv,.json,.jsonl" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+        </div>
+
+        <div class="glass-panel rounded-xl shadow-lg p-4 sm:p-6">
+          <h3 class="text-lg font-medium text-gray-700">保存済みデータ（ユーザー単位）</h3>
+          <div id="storage-status" class="text-xs text-gray-500 my-2"></div>
+          <div id="storage-breakdown" class="text-xs text-gray-500 my-2"></div>
+          <ul id="saved-files-list" class="space-y-3 mt-4 max-h-80 overflow-y-auto pr-2"></ul>
+
+          <div class="mt-6 space-y-2">
+            <h4 class="text-sm font-semibold text-gray-700">期間指定で削除</h4>
+            <div class="flex items-center gap-2">
+              <input type="date" id="delete-from" class="w-32 rounded-md shadow-sm sm:text-sm">
+              <span class="text-xs text-gray-500">〜</span>
+              <input type="date" id="delete-to" class="w-32 rounded-md shadow-sm sm:text-sm">
+            </div>
+            <div class="text-xs text-gray-500" id="delete-preview">削除対象: 0 件</div>
+            <button id="delete-by-range" class="text-xs bg-rose-500 hover:bg-rose-600 text-white font-semibold py-1 px-2 rounded">期間削除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="lg:col-span-3">
+        <div id="status-display" class="status-panel my-4 p-4 text-center rounded-lg">
+          <p id="status-message">データを登録してください。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../sfen_viewer/app.js"></script>
+  <script src="./data.js"></script>
+</body>
+</html>
