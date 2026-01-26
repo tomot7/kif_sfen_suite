@@ -3,6 +3,9 @@
   --cell-h: 36px;
   --piece-font: 18px;
 }
+*, *::before, *::after {
+  box-sizing: border-box;
+}
 body {
   font-family: 'Noto Sans JP', 'Inter', sans-serif;
   background: radial-gradient(1200px 800px at 10% 10%, rgba(16,185,129,0.25), transparent 60%),
@@ -69,6 +72,25 @@ body {
 }
 .no-overflow {
   min-width: 0;
+}
+.user-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.user-list-main {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.user-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  flex: 0 1 auto;
 }
 input, textarea, select {
   color: #f8fafc;

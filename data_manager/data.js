@@ -28,13 +28,13 @@ function renderUsers(users) {
   users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   users.forEach(({ name, createdAt }) => {
     const li = document.createElement('li');
-    li.className = 'flex items-center justify-between p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
+    li.className = 'user-list-item p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
     li.innerHTML = `
-      <div class="flex-grow overflow-hidden mr-2 no-overflow">
+      <div class="user-list-main overflow-hidden no-overflow">
         <strong class="text-sm block wrap-any">${name}</strong>
         <small class="text-xs text-gray-500">${new Date(createdAt).toLocaleString()}</small>
       </div>
-      <div class="flex-shrink-0 space-x-1">
+      <div class="user-list-actions">
         <button data-name="${name}" class="select-btn text-xs btn-soft font-semibold py-1 px-2 rounded">選択</button>
         <button data-name="${name}" class="download-btn text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-1 px-2 rounded">CSV</button>
         <button data-name="${name}" class="delete-btn text-xs bg-rose-500 hover:bg-rose-600 text-white font-semibold py-1 px-2 rounded">削除</button>

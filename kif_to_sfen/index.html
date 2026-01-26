@@ -103,18 +103,18 @@
                 
                 <div class="mt-6 space-y-4">
                     <h3 class="text-lg font-medium text-gray-700 dark:text-gray-300">オプション</h3>
-                    <div class="relative flex items-center gap-x-4">
+                    <div class="relative flex flex-wrap items-center gap-3">
                         <label for="target-user-name" class="font-medium text-gray-900 dark:text-gray-100">集計対象ユーザー名:</label>
-                        <input id="target-user-name" name="target-user-name" type="text" placeholder="例: 田中 太郎" class="flex-1 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <p class="text-sm text-gray-500 dark:text-gray-400">このユーザーの先手/後手回数を集計します。</p>
+                        <input id="target-user-name" name="target-user-name" type="text" placeholder="例: 田中 太郎" class="w-full sm:flex-1 sm:w-auto rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <p class="w-full sm:w-auto text-sm text-gray-500 dark:text-gray-400">このユーザーの先手/後手回数を集計します。</p>
                     </div>
-                    <div class="relative flex items-center gap-x-4">
+                    <div class="relative flex flex-wrap items-center gap-3">
                         <label for="batch-format" class="font-medium text-gray-900 dark:text-gray-100">出力形式:</label>
                         <select id="batch-format" class="rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                             <option value="csv">CSV (標準)</option>
                             <option value="jsonl">JSONL (軽量)</option>
                         </select>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">軽量なJSONLはCSVより小さくなります。</p>
+                        <p class="w-full sm:w-auto text-sm text-gray-500 dark:text-gray-400">軽量なJSONLはCSVより小さくなります。</p>
                     </div>
                     <div class="relative flex items-start">
                         <div class="flex h-6 items-center">
@@ -125,10 +125,10 @@
                             <p class="text-gray-500 dark:text-gray-400">データノイズを減らし、頻出局面に絞り込みます。</p>
                         </div>
                     </div>
-                     <div class="relative flex items-center gap-x-4">
+                            <div class="relative flex flex-wrap items-center gap-3">
                         <label for="min-move-number" class="font-medium text-gray-900 dark:text-gray-100">開始手数を指定:</label>
                         <input id="min-move-number" name="min-move-number" type="number" value="1" min="1" class="w-24 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <p class="text-sm text-gray-500 dark:text-gray-400">手以降の局面を分析対象とします。</p>
+                                <p class="w-full sm:w-auto text-sm text-gray-500 dark:text-gray-400">手以降の局面を分析対象とします。</p>
                     </div>
                 </div>
 

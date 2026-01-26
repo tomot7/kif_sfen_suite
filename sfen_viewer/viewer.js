@@ -13,6 +13,9 @@ const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
 const applySettingsButton = document.getElementById('apply-settings');
 const targetUserInput = document.getElementById('target-user');
+const userFilterEnableInput = document.getElementById('user-filter-enable');
+const userMaxWinrateInput = document.getElementById('user-max-winrate');
+const userMinCountInput = document.getElementById('user-min-count');
 const pagination = document.getElementById('pagination');
 const prevPageButton = document.getElementById('prev-page');
 const nextPageButton = document.getElementById('next-page');
@@ -47,13 +50,13 @@ function renderUsers(users) {
   users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   users.forEach(({ name, createdAt }) => {
     const li = document.createElement('li');
-    li.className = 'flex items-center justify-between p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
+    li.className = 'user-list-item p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
     li.innerHTML = `
-      <div class="flex-grow overflow-hidden mr-2 no-overflow">
+      <div class="user-list-main overflow-hidden no-overflow">
         <strong class="text-sm block wrap-any">${name}</strong>
         <small class="text-xs text-gray-500">${new Date(createdAt).toLocaleString()}</small>
       </div>
-      <div class="flex-shrink-0 space-x-1">
+      <div class="user-list-actions">
         <button data-name="${name}" class="load-btn text-xs btn-soft font-semibold py-1 px-2 rounded">読込</button>
       </div>
     `;
@@ -75,7 +78,7 @@ async function loadUser(userName) {
   currentUserName = userName;
   allRecords = await App.loadUserRecords(userName);
   targetUserName = allRecords.find(r => r.targetUserName)?.targetUserName || '';
-  if (targetUserName && !targetUserInput.value) targetUserInput.value = targetUserName;
+  targetUserInput.value = targetUserName || '';
   await applyDateRangeDefaults(userName);
   currentPage = 1;
   renderFilteredBoards();
@@ -93,6 +96,17 @@ function renderFilteredBoards() {
   const pageSize = Math.max(parseInt(pageSizeInput.value, 10) || 60, 1);
   const dateFrom = dateFromInput.value || null;
   const dateTo = dateToInput.value || null;
+  const userFilterEnabled = userFilterEnableInput.checked;
+  const maxUserWinRateRaw = parseFloat(userMaxWinrateInput.value);
+  const maxUserWinRate = Number.isFinite(maxUserWinRateRaw)
+    ? Math.min(Math.max(maxUserWinRateRaw, 0), 100)
+    : 100;
+  const minUserCount = Math.max(parseInt(userMinCountInput.value, 10) || 1, 1);
+
+  if (userFilterEnabled && !targetUserName) {
+    showStatus('対象ユーザー名がデータに含まれていないため、ユーザー成績の絞り込みは利用できません。', true);
+    return;
+  }
 
   const filteredRecords = allRecords.filter(record => {
     const moveNumber = parseInt(record.sfen.split(' ')[3], 10);
@@ -102,6 +116,15 @@ function renderFilteredBoards() {
       const recordDate = record.gameDate;
       if (dateFrom && recordDate < dateFrom) return false;
       if (dateTo && recordDate > dateTo) return false;
+    }
+    if (userFilterEnabled) {
+      const userWins = (record.userSenteWins || 0) + (record.userGoteWins || 0);
+      const userDraws = (record.userSenteDraws || 0) + (record.userGoteDraws || 0);
+      const userGames = (record.userSente || 0) + (record.userGote || 0);
+      const decided = Math.max(userGames - userDraws, 0);
+      const winRate = decided > 0 ? (userWins / decided) * 100 : 0;
+      if (userGames < minUserCount) return false;
+      if (winRate > maxUserWinRate) return false;
     }
     return true;
   });
@@ -284,7 +307,9 @@ applySettingsButton.addEventListener('click', renderFilteredBoards);
 pageSizeInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 prevPageButton.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderFilteredBoards(); } });
 nextPageButton.addEventListener('click', () => { currentPage++; renderFilteredBoards(); });
-targetUserInput.addEventListener('input', renderFilteredBoards);
+userFilterEnableInput.addEventListener('change', renderFilteredBoards);
+userMaxWinrateInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
+userMinCountInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 dateFromInput.addEventListener('change', () => { currentPage = 1; renderFilteredBoards(); });
 dateToInput.addEventListener('change', () => { currentPage = 1; renderFilteredBoards(); });
 cancelCommentButton.addEventListener('click', () => commentModal.classList.add('hidden'));
