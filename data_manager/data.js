@@ -29,17 +29,44 @@ function renderUsers(users) {
   users.forEach(({ name, createdAt }) => {
     const li = document.createElement('li');
     li.className = 'user-list-item p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
-    li.innerHTML = `
-      <div class="user-list-main overflow-hidden no-overflow">
-        <strong class="text-sm block wrap-any">${name}</strong>
-        <small class="text-xs text-gray-500">${new Date(createdAt).toLocaleString()}</small>
-      </div>
-      <div class="user-list-actions">
-        <button data-name="${name}" class="select-btn text-xs btn-soft font-semibold py-1 px-2 rounded">選択</button>
-        <button data-name="${name}" class="download-btn text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-1 px-2 rounded">CSV</button>
-        <button data-name="${name}" class="delete-btn text-xs bg-rose-500 hover:bg-rose-600 text-white font-semibold py-1 px-2 rounded">削除</button>
-      </div>
-    `;
+    
+    const mainDiv = document.createElement('div');
+    mainDiv.className = 'user-list-main overflow-hidden no-overflow';
+    
+    const nameStrong = document.createElement('strong');
+    nameStrong.className = 'text-sm block wrap-any';
+    nameStrong.textContent = name;
+    
+    const dateSmall = document.createElement('small');
+    dateSmall.className = 'text-xs text-gray-500';
+    dateSmall.textContent = new Date(createdAt).toLocaleString();
+    
+    mainDiv.appendChild(nameStrong);
+    mainDiv.appendChild(dateSmall);
+    
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'user-list-actions';
+    
+    const selectBtn = document.createElement('button');
+    selectBtn.dataset.name = name;
+    selectBtn.className = 'select-btn text-xs btn-soft font-semibold py-1 px-2 rounded';
+    selectBtn.textContent = '選択';
+    
+    const downloadBtn = document.createElement('button');
+    downloadBtn.dataset.name = name;
+    downloadBtn.className = 'download-btn text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-1 px-2 rounded';
+    downloadBtn.textContent = 'CSV';
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.dataset.name = name;
+    deleteBtn.className = 'delete-btn text-xs bg-rose-500 hover:bg-rose-600 text-white font-semibold py-1 px-2 rounded';
+    deleteBtn.textContent = '削除';
+    
+    actionsDiv.appendChild(selectBtn);
+    actionsDiv.appendChild(downloadBtn);
+    actionsDiv.appendChild(deleteBtn);
+    li.appendChild(mainDiv);
+    li.appendChild(actionsDiv);
     savedFilesList.appendChild(li);
   });
 

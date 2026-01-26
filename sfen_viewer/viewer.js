@@ -99,15 +99,32 @@ function renderUsers(users) {
   users.forEach(({ name, createdAt }) => {
     const li = document.createElement('li');
     li.className = 'user-list-item p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
-    li.innerHTML = `
-      <div class="user-list-main overflow-hidden no-overflow">
-        <strong class="text-sm block wrap-any">${name}</strong>
-        <small class="text-xs text-gray-500">${new Date(createdAt).toLocaleString()}</small>
-      </div>
-      <div class="user-list-actions">
-        <button data-name="${name}" class="load-btn text-xs btn-soft font-semibold py-1 px-2 rounded">読込</button>
-      </div>
-    `;
+    
+    const mainDiv = document.createElement('div');
+    mainDiv.className = 'user-list-main overflow-hidden no-overflow';
+    
+    const nameStrong = document.createElement('strong');
+    nameStrong.className = 'text-sm block wrap-any';
+    nameStrong.textContent = name;
+    
+    const dateSmall = document.createElement('small');
+    dateSmall.className = 'text-xs text-gray-500';
+    dateSmall.textContent = new Date(createdAt).toLocaleString();
+    
+    mainDiv.appendChild(nameStrong);
+    mainDiv.appendChild(dateSmall);
+    
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'user-list-actions';
+    
+    const loadBtn = document.createElement('button');
+    loadBtn.dataset.name = name;
+    loadBtn.className = 'load-btn text-xs btn-soft font-semibold py-1 px-2 rounded';
+    loadBtn.textContent = '読込';
+    
+    actionsDiv.appendChild(loadBtn);
+    li.appendChild(mainDiv);
+    li.appendChild(actionsDiv);
     savedFilesList.appendChild(li);
   });
   document.querySelectorAll('.load-btn').forEach(btn => btn.addEventListener('click', async (e) => {
@@ -262,22 +279,31 @@ function createBoardElement(record) {
   const copyButton = document.createElement('button');
   copyButton.textContent = 'SFENコピー';
   copyButton.className = 'text-xs btn-soft px-3 py-2 rounded-md w-full';
-  copyButton.addEventListener('click', (e) => {
+  copyButton.addEventListener('click', async (e) => {
     e.stopPropagation();
-    const tempTextArea = document.createElement('textarea');
-    tempTextArea.value = sfen;
-    document.body.appendChild(tempTextArea);
-    tempTextArea.select();
-    document.execCommand('copy');
-    document.body.removeChild(tempTextArea);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(sfen);
+      } else {
+        // フォールバック: 古いブラウザ用
+        const tempTextArea = document.createElement('textarea');
+        tempTextArea.value = sfen;
+        document.body.appendChild(tempTextArea);
+        tempTextArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempTextArea);
+      }
 
-    const originalText = e.target.textContent;
-    e.target.textContent = 'コピー完了';
-    e.target.classList.add('bg-green-500', 'text-white');
-    setTimeout(() => {
-      e.target.textContent = originalText;
-      e.target.classList.remove('bg-green-500', 'text-white');
-    }, 2000);
+      const originalText = e.target.textContent;
+      e.target.textContent = 'コピー完了';
+      e.target.classList.add('bg-green-500', 'text-white');
+      setTimeout(() => {
+        e.target.textContent = originalText;
+        e.target.classList.remove('bg-green-500', 'text-white');
+      }, 2000);
+    } catch (err) {
+      console.error('コピーに失敗しました:', err);
+    }
   });
   buttonsContainer.appendChild(copyButton);
   infoDiv.appendChild(buttonsContainer);
@@ -293,11 +319,29 @@ function createBoardElement(record) {
 
     const userInfo = document.createElement('div');
     userInfo.className = 'text-xs text-gray-600 mt-2 text-center space-y-1';
-    userInfo.innerHTML = `
-      <div>ユーザー「${displayName}」: 先手 ${userSente || 0} / 後手 ${userGote || 0}</div>
-      <div>先手勝率: <span class="font-semibold">${senteWinRate === '-' ? '-' : `${senteWinRate}%`}</span>（勝 ${userSenteWins || 0} / 引 ${userSenteDraws || 0} / 負 ${senteLosses}）</div>
-      <div>後手勝率: <span class="font-semibold">${goteWinRate === '-' ? '-' : `${goteWinRate}%`}</span>（勝 ${userGoteWins || 0} / 引 ${userGoteDraws || 0} / 負 ${goteLosses}）</div>
-    `;
+    
+    const line1 = document.createElement('div');
+    line1.textContent = `ユーザー「${displayName}」: 先手 ${userSente || 0} / 後手 ${userGote || 0}`;
+    
+    const line2 = document.createElement('div');
+    line2.textContent = `先手勝率: `;
+    const span2 = document.createElement('span');
+    span2.className = 'font-semibold';
+    span2.textContent = senteWinRate === '-' ? '-' : `${senteWinRate}%`;
+    line2.appendChild(span2);
+    line2.appendChild(document.createTextNode(`（勝 ${userSenteWins || 0} / 引 ${userSenteDraws || 0} / 負 ${senteLosses}）`));
+    
+    const line3 = document.createElement('div');
+    line3.textContent = `後手勝率: `;
+    const span3 = document.createElement('span');
+    span3.className = 'font-semibold';
+    span3.textContent = goteWinRate === '-' ? '-' : `${goteWinRate}%`;
+    line3.appendChild(span3);
+    line3.appendChild(document.createTextNode(`（勝 ${userGoteWins || 0} / 引 ${userGoteDraws || 0} / 負 ${goteLosses}）`));
+    
+    userInfo.appendChild(line1);
+    userInfo.appendChild(line2);
+    userInfo.appendChild(line3);
     infoDiv.appendChild(userInfo);
   }
 

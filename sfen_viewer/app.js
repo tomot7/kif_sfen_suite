@@ -73,7 +73,7 @@ async function enforceStorageLimit(extraBytes) {
   const cappedQuota = Math.min(quota || MAX_IDB_BYTES, MAX_IDB_BYTES);
   if (usage + extraBytes > cappedQuota) {
     const limitGb = (cappedQuota / 1024 / 1024 / 1024).toFixed(1);
-    const message = `IndexedDBの上限(${limitGb}GB)を超えるため保存できません。不要なデータを削除してください。`;
+    const message = `ストレージの上限を超えるため保存できません。不要なデータを削除してください。`;
     const err = new Error(message);
     err.name = 'QuotaExceededError';
     throw err;

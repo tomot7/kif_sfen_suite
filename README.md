@@ -39,4 +39,23 @@ KIF棋譜の変換とSFEN局面の閲覧を一つにまとめた静的プロジ�
 - ローカルストレージを利用するため、ブラウザの保存容量に制限があります。
 
 ## ライセンス
-元プロジェクトのライセンスに従って利用してください。
+
+このプロジェクトは以下のオープンソースプロジェクトのコードを移植して作成されています:
+
+### 移植元プロジェクト
+
+- **lishogi** (https://github.com/WandererXII/lishogi)
+  - ライセンス: GNU Affero General Public License v3.0 (AGPL-3.0)
+  - 移植機能: 盤面描画、局面表示機能の一部
+
+- **shogiops** (https://github.com/WandererXII/shogiops)
+  - ライセンス: GNU General Public License v3.0 (GPL-3.0)
+  - 移植機能: SFEN解析、指し手生成、記譜法変換
+
+### 本プロジェクトのライセンス
+
+本プロジェクトは、移植元プロジェクトのライセンス条件に従い、**GNU General Public License v3.0 (GPL-3.0)** の下で公開されます。
+
+詳細は各プロジェクトのライセンスファイルを参照してください:
+- lishogi: https://github.com/WandererXII/lishogi/blob/master/LICENSE
+- shogiops: https://github.com/WandererXII/shogiops/blob/master/LICENSE.txt

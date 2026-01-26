@@ -283,12 +283,21 @@
             }
         });
         
-        copyButton.addEventListener('click', () => {
-            sfenOutput.select();
-            document.execCommand('copy');
-            sfenOutput.blur();
-            copyFeedback.classList.remove('opacity-0');
-            setTimeout(() => { copyFeedback.classList.add('opacity-0'); }, 2000);
+        copyButton.addEventListener('click', async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(sfenOutput.value);
+                } else {
+                    // フォールバック: 古いブラウザ用
+                    sfenOutput.select();
+                    document.execCommand('copy');
+                    sfenOutput.blur();
+                }
+                copyFeedback.classList.remove('opacity-0');
+                setTimeout(() => { copyFeedback.classList.add('opacity-0'); }, 2000);
+            } catch (err) {
+                console.error('コピーに失敗しました:', err);
+            }
         });
 
         // --- 一括処理関数 ---

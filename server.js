@@ -25,6 +25,9 @@ function send(res, status, data, ext = '.txt') {
     'Cross-Origin-Embedder-Policy': 'credentialless',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Cache-Control': 'no-cache',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:;",
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
   });
   res.end(data);
 }
@@ -39,6 +42,13 @@ function serveFile(res, filePath) {
 const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
   let filePath = path.join(ROOT, urlPath);
+  
+  // パストラバーサル対策: ROOT配下のパスであることを確認
+  const resolvedPath = path.resolve(filePath);
+  if (!resolvedPath.startsWith(ROOT)) {
+    return send(res, 403, 'Forbidden');
+  }
+  
   if (filePath.endsWith(path.sep)) filePath = path.join(filePath, 'index.html');
 
   fs.stat(filePath, (err, stats) => {

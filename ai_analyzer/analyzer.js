@@ -169,7 +169,7 @@ function handleEngineMessage(msg) {
 async function ensureEngine() {
   if (engineReadyPromise) return engineReadyPromise;
   engineReadyPromise = (async () => {
-    if (!window.crossOriginIsolated) throw new Error('crossOriginIsolatedが必要です。server.jsで配信してください。');
+    if (!window.crossOriginIsolated) throw new Error('エンジンの初期化に必要な環境が整っていません。');
     await loadScript('../sfen_viewer/vendors/yaneuraou.k-p/lib/yaneuraou.k-p.js');
     const wasmBinary = await fetch('../sfen_viewer/vendors/yaneuraou.k-p/lib/yaneuraou.k-p.wasm').then(r => r.arrayBuffer());
     const wasmMemory = new WebAssembly.Memory({ initial: 256, maximum: 256, shared: false });
