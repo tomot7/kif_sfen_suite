@@ -4,6 +4,7 @@ const DB_NAME = 'sfen_viewer_idb';
 const DB_VERSION = 1;
 const STORE_USERS = 'users';
 const STORE_POSITIONS = 'positions';
+const MAX_IDB_BYTES = 10 * 1024 * 1024 * 1024;
 
 let db = null;
 
@@ -31,6 +32,53 @@ async function initDb() {
   if (db) return db;
   db = await openDb();
   return db;
+}
+
+function estimateRecordsBytes(records) {
+  if (!records || records.length === 0) return 0;
+  const encoder = new TextEncoder();
+  let total = 0;
+  records.forEach(rec => {
+    const json = JSON.stringify(rec);
+    total += encoder.encode(json).length;
+  });
+  return total;
+}
+
+async function getExistingKeysByUser(userName) {
+  const idb = await initDb();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(STORE_POSITIONS, 'readonly');
+    const positions = tx.objectStore(STORE_POSITIONS);
+    const index = positions.index('userName');
+    const range = IDBKeyRange.only(userName);
+    const keys = new Set();
+    index.openCursor(range).onsuccess = e => {
+      const cursor = e.target.result;
+      if (cursor) {
+        keys.add(buildRecordKey(cursor.value));
+        cursor.continue();
+      } else {
+        resolve(keys);
+      }
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function enforceStorageLimit(extraBytes) {
+  const estimate = await estimateStorage();
+  const usage = estimate?.usage || 0;
+  const quota = estimate?.quota || MAX_IDB_BYTES;
+  const cappedQuota = Math.min(quota || MAX_IDB_BYTES, MAX_IDB_BYTES);
+  if (usage + extraBytes > cappedQuota) {
+    const limitGb = (cappedQuota / 1024 / 1024 / 1024).toFixed(1);
+    const message = `IndexedDBの上限(${limitGb}GB)を超えるため保存できません。不要なデータを削除してください。`;
+    const err = new Error(message);
+    err.name = 'QuotaExceededError';
+    throw err;
+  }
+  return { usage, quota: cappedQuota };
 }
 
 function parseData(text, filename = '') {
@@ -202,9 +250,38 @@ function buildRecordKey(rec) {
 }
 
 async function saveUserRecords(userName, records) {
-  const idb = await initDb();
   const name = (userName || '未指定').trim() || '未指定';
   const createdAt = new Date().toISOString();
+  const existingKeys = await getExistingKeysByUser(name);
+  const normalizedRecords = [];
+  records.forEach(rec => {
+    const normalized = {
+      userName: name,
+      sfen: rec.sfen,
+      gameDate: rec.gameDate || '',
+      count: rec.count || 0,
+      senteWins: rec.senteWins || 0,
+      goteWins: rec.goteWins || 0,
+      draws: rec.draws || 0,
+      targetUserName: rec.targetUserName || '',
+      userSente: rec.userSente || 0,
+      userSenteWins: rec.userSenteWins || 0,
+      userSenteDraws: rec.userSenteDraws || 0,
+      userGote: rec.userGote || 0,
+      userGoteWins: rec.userGoteWins || 0,
+      userGoteDraws: rec.userGoteDraws || 0,
+      comment: rec.comment || ''
+    };
+    const key = buildRecordKey(normalized);
+    if (!existingKeys.has(key)) {
+      existingKeys.add(key);
+      normalizedRecords.push(normalized);
+    }
+  });
+  const extraBytes = estimateRecordsBytes(normalizedRecords);
+  await enforceStorageLimit(extraBytes);
+
+  const idb = await initDb();
   return new Promise((resolve, reject) => {
     const tx = idb.transaction([STORE_USERS, STORE_POSITIONS], 'readwrite');
     const users = tx.objectStore(STORE_USERS);
@@ -214,41 +291,9 @@ async function saveUserRecords(userName, records) {
       users.put({ name, createdAt: existing?.createdAt || createdAt });
     };
 
-    const index = positions.index('userName');
-    const range = IDBKeyRange.only(name);
-    const existingKeys = new Set();
-    index.openCursor(range).onsuccess = e => {
-      const cursor = e.target.result;
-      if (cursor) {
-        existingKeys.add(buildRecordKey(cursor.value));
-        cursor.continue();
-      } else {
-        records.forEach(rec => {
-          const normalized = {
-            userName: name,
-            sfen: rec.sfen,
-            gameDate: rec.gameDate || '',
-            count: rec.count || 0,
-            senteWins: rec.senteWins || 0,
-            goteWins: rec.goteWins || 0,
-            draws: rec.draws || 0,
-            targetUserName: rec.targetUserName || '',
-            userSente: rec.userSente || 0,
-            userSenteWins: rec.userSenteWins || 0,
-            userSenteDraws: rec.userSenteDraws || 0,
-            userGote: rec.userGote || 0,
-            userGoteWins: rec.userGoteWins || 0,
-            userGoteDraws: rec.userGoteDraws || 0,
-            comment: rec.comment || ''
-          };
-          const key = buildRecordKey(normalized);
-          if (!existingKeys.has(key)) {
-            existingKeys.add(key);
-            positions.add(normalized);
-          }
-        });
-      }
-    };
+    normalizedRecords.forEach(rec => {
+      positions.add(rec);
+    });
 
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -438,7 +483,14 @@ async function countByDateRange(userName, from, to) {
 
 async function estimateStorage() {
   if (navigator.storage && navigator.storage.estimate) {
-    try { return await navigator.storage.estimate(); } catch (e) { return null; }
+    try {
+      const estimate = await navigator.storage.estimate();
+      if (!estimate) return null;
+      const quota = Math.min(estimate.quota || MAX_IDB_BYTES, MAX_IDB_BYTES);
+      return { ...estimate, quota };
+    } catch (e) {
+      return null;
+    }
   }
   return null;
 }
