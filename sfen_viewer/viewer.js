@@ -11,7 +11,6 @@ const minMoveInput = document.getElementById('min-move');
 const pageSizeInput = document.getElementById('page-size');
 const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
-const applySettingsButton = document.getElementById('apply-settings');
 const targetUserInput = document.getElementById('target-user');
 const userFilterEnableInput = document.getElementById('user-filter-enable');
 const userMaxWinrateInput = document.getElementById('user-max-winrate');
@@ -95,8 +94,8 @@ function renderUsers(users) {
     savedFilesList.innerHTML = '<li class="text-sm text-gray-500">保存済みのデータはありません。</li>';
     return;
   }
-  users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  users.forEach(({ name, createdAt }) => {
+  users.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+  users.forEach(({ name, createdAt, updatedAt }) => {
     const li = document.createElement('li');
     li.className = 'user-list-item p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
     
@@ -109,7 +108,8 @@ function renderUsers(users) {
     
     const dateSmall = document.createElement('small');
     dateSmall.className = 'text-xs text-gray-500';
-    dateSmall.textContent = new Date(createdAt).toLocaleString();
+    const displayDate = updatedAt || createdAt;
+    dateSmall.textContent = displayDate ? `最終更新: ${new Date(displayDate).toLocaleString()}` : '最終更新: -';
     
     mainDiv.appendChild(nameStrong);
     mainDiv.appendChild(dateSmall);
@@ -210,7 +210,7 @@ function renderFilteredBoards() {
   prevPageButton.disabled = currentPage <= 1;
   nextPageButton.disabled = currentPage >= totalPages;
 
-  showStatus(`${pageRecords.length} 件の局面を表示しています。`);
+  showStatus('表示条件を適用しました。');
 }
 
 function displayBoards(records) {
@@ -563,12 +563,15 @@ function parseInfo(msg) {
       break;
     }
   }
-  const scoreRaw = scoreMate !== null ? `mate ${scoreMate}` : scoreCp !== null ? (scoreCp / 100).toFixed(2) : '-';
-  const scoreText = scoreRaw === '-'
+  const sign = (analysisState?.pos?.turn === 'gote') ? -1 : 1; // 先手基準
+  const adjustedMate = scoreMate !== null ? scoreMate * sign : null;
+  const adjustedCp = scoreCp !== null ? (scoreCp / 100) * sign : null;
+  const scoreRaw = adjustedMate !== null ? adjustedMate : adjustedCp;
+  const scoreText = scoreRaw === null
     ? '-'
-    : scoreRaw.startsWith('mate')
-      ? scoreRaw
-      : (Number(scoreRaw) >= 0 ? `+${scoreRaw}` : `${scoreRaw}`); // 先手有利プラス / 後手有利マイナス
+    : (adjustedMate !== null
+      ? `mate ${adjustedMate}`
+      : (scoreRaw >= 0 ? `+${scoreRaw.toFixed(2)}` : `${scoreRaw.toFixed(2)}`));
   return { depth, nodes, nps, time, pv, multipv, scoreText };
 }
 
@@ -944,7 +947,8 @@ async function initializeApp() {
   await updateStorageStatus();
 }
 
-applySettingsButton.addEventListener('click', renderFilteredBoards);
+minCountInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
+minMoveInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 pageSizeInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 prevPageButton.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderFilteredBoards(); } });
 nextPageButton.addEventListener('click', () => { currentPage++; renderFilteredBoards(); });

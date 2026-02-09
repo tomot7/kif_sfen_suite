@@ -129,12 +129,15 @@ function parseInfo(msg) {
       break;
     }
   }
-  const scoreRaw = scoreMate !== null ? `mate ${scoreMate}` : scoreCp !== null ? (scoreCp / 100).toFixed(2) : '-';
-  const scoreText = scoreRaw === '-'
+  const sign = (analysisState?.pos?.turn === 'gote') ? -1 : 1; // 先手基準
+  const adjustedMate = scoreMate !== null ? scoreMate * sign : null;
+  const adjustedCp = scoreCp !== null ? (scoreCp / 100) * sign : null;
+  const scoreRaw = adjustedMate !== null ? adjustedMate : adjustedCp;
+  const scoreText = scoreRaw === null
     ? '-'
-    : scoreRaw.startsWith('mate')
-      ? scoreRaw
-      : (Number(scoreRaw) >= 0 ? `+${scoreRaw}` : `${scoreRaw}`);
+    : (adjustedMate !== null
+      ? `mate ${adjustedMate}`
+      : (scoreRaw >= 0 ? `+${scoreRaw.toFixed(2)}` : `${scoreRaw.toFixed(2)}`));
   return { depth, nodes, nps, time, pv, multipv, scoreText };
 }
 

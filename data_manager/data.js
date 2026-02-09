@@ -25,8 +25,8 @@ function renderUsers(users) {
     savedFilesList.innerHTML = '<li class="text-sm text-gray-500">保存済みのデータはありません。</li>';
     return;
   }
-  users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  users.forEach(({ name, createdAt }) => {
+  users.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+  users.forEach(({ name, createdAt, updatedAt }) => {
     const li = document.createElement('li');
     li.className = 'user-list-item p-2 rounded-md hover:bg-white/10 transition-colors no-overflow';
     
@@ -39,7 +39,8 @@ function renderUsers(users) {
     
     const dateSmall = document.createElement('small');
     dateSmall.className = 'text-xs text-gray-500';
-    dateSmall.textContent = new Date(createdAt).toLocaleString();
+    const displayDate = updatedAt || createdAt;
+    dateSmall.textContent = displayDate ? `最終更新: ${new Date(displayDate).toLocaleString()}` : '最終更新: -';
     
     mainDiv.appendChild(nameStrong);
     mainDiv.appendChild(dateSmall);

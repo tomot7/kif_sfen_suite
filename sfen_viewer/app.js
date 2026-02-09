@@ -1,7 +1,7 @@
 const sfenToKanjiMap = { 'P': '歩', 'L': '香', 'N': '桂', 'S': '銀', 'G': '金', 'B': '角', 'R': '飛', 'K': '玉', '+P': 'と', '+L': '杏', '+N': '圭', '+S': '全', '+B': '馬', '+R': '龍' };
 
 const DB_NAME = 'sfen_viewer_idb';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_USERS = 'users';
 const STORE_POSITIONS = 'positions';
 const MAX_IDB_BYTES = 10 * 1024 * 1024 * 1024;
@@ -11,11 +11,33 @@ let db = null;
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (e) => {
+      const oldVersion = e.oldVersion || 0;
       const idb = req.result;
+      const upgradeTx = req.transaction;
       if (!idb.objectStoreNames.contains(STORE_USERS)) {
         const users = idb.createObjectStore(STORE_USERS, { keyPath: 'name' });
         users.createIndex('createdAt', 'createdAt');
+        users.createIndex('updatedAt', 'updatedAt');
+      } else {
+        const users = upgradeTx.objectStore(STORE_USERS);
+        if (!users.indexNames.contains('createdAt')) {
+          users.createIndex('createdAt', 'createdAt');
+        }
+        if (!users.indexNames.contains('updatedAt')) {
+          users.createIndex('updatedAt', 'updatedAt');
+        }
+        if (oldVersion < 2) {
+          users.openCursor().onsuccess = (ev) => {
+            const cursor = ev.target.result;
+            if (cursor) {
+              const value = cursor.value;
+              const updatedAt = value.updatedAt || value.createdAt || new Date().toISOString();
+              cursor.update({ ...value, updatedAt });
+              cursor.continue();
+            }
+          };
+        }
       }
       if (!idb.objectStoreNames.contains(STORE_POSITIONS)) {
         const positions = idb.createObjectStore(STORE_POSITIONS, { keyPath: 'id', autoIncrement: true });
@@ -226,7 +248,13 @@ async function getUsers() {
     const tx = idb.transaction(STORE_USERS, 'readonly');
     const store = tx.objectStore(STORE_USERS);
     const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
+    req.onsuccess = () => {
+      const users = (req.result || []).map(user => ({
+        ...user,
+        updatedAt: user.updatedAt || user.createdAt
+      }));
+      resolve(users);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -251,7 +279,7 @@ function buildRecordKey(rec) {
 
 async function saveUserRecords(userName, records) {
   const name = (userName || '未指定').trim() || '未指定';
-  const createdAt = new Date().toISOString();
+  const now = new Date().toISOString();
   const existingKeys = await getExistingKeysByUser(name);
   const normalizedRecords = [];
   records.forEach(rec => {
@@ -288,7 +316,11 @@ async function saveUserRecords(userName, records) {
     const positions = tx.objectStore(STORE_POSITIONS);
     users.get(name).onsuccess = e => {
       const existing = e.target.result;
-      users.put({ name, createdAt: existing?.createdAt || createdAt });
+      users.put({
+        name,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+      });
     };
 
     normalizedRecords.forEach(rec => {
@@ -380,18 +412,31 @@ async function deleteUser(userName) {
 async function updateComment(userName, sfen, comment) {
   const idb = await initDb();
   return new Promise((resolve, reject) => {
-    const tx = idb.transaction(STORE_POSITIONS, 'readwrite');
+    const tx = idb.transaction([STORE_POSITIONS, STORE_USERS], 'readwrite');
     const positions = tx.objectStore(STORE_POSITIONS);
+    const users = tx.objectStore(STORE_USERS);
+    const now = new Date().toISOString();
     const index = positions.index('userName');
     const range = IDBKeyRange.only(userName);
+    let commentUpdated = false;
     index.openCursor(range).onsuccess = e => {
       const cursor = e.target.result;
       if (cursor) {
         if (cursor.value.sfen === sfen) {
-          const updated = { ...cursor.value, comment };
-          cursor.update(updated);
+          const nextValue = { ...cursor.value, comment };
+          cursor.update(nextValue);
+          commentUpdated = true;
         }
         cursor.continue();
+      } else {
+        if (commentUpdated) {
+          users.get(userName).onsuccess = ev => {
+            const existing = ev.target.result;
+            if (existing) {
+              users.put({ ...existing, updatedAt: now });
+            }
+          };
+        }
       }
     };
     tx.oncomplete = () => resolve();
@@ -447,15 +492,26 @@ async function deleteByDateRange(userName, from, to) {
   const start = from || '0000-00-00';
   const end = to || '9999-12-31';
   return new Promise((resolve, reject) => {
-    const tx = idb.transaction(STORE_POSITIONS, 'readwrite');
+    const tx = idb.transaction([STORE_POSITIONS, STORE_USERS], 'readwrite');
     const positions = tx.objectStore(STORE_POSITIONS);
+    const users = tx.objectStore(STORE_USERS);
     const index = positions.index('userName_gameDate');
     const range = IDBKeyRange.bound([userName, start], [userName, end]);
     let deleted = 0;
+    const now = new Date().toISOString();
     index.openCursor(range).onsuccess = e => {
       const cursor = e.target.result;
       if (cursor) { cursor.delete(); deleted++; cursor.continue(); }
-      else return;
+      else {
+        if (deleted > 0) {
+          users.get(userName).onsuccess = ev => {
+            const existing = ev.target.result;
+            if (existing) {
+              users.put({ ...existing, updatedAt: now });
+            }
+          };
+        }
+      }
     };
     tx.oncomplete = () => resolve(deleted);
     tx.onerror = () => reject(tx.error);
