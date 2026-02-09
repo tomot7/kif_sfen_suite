@@ -60,6 +60,14 @@
               <p class="mt-1 text-xs text-gray-500">ページングで分割表示します。</p>
             </div>
             <div>
+              <label for="sort-by" class="block text-sm font-medium text-gray-700">並び順</label>
+              <select id="sort-by" class="w-44 mt-1 rounded-md shadow-sm sm:text-sm">
+                <option value="count-desc" selected>出現回数（多い順）</option>
+                <option value="sente-winrate">先手勝率（高い順）</option>
+                <option value="gote-winrate">後手勝率（高い順）</option>
+              </select>
+            </div>
+            <div>
               <label for="date-from" class="block text-sm font-medium text-gray-700">開始日</label>
               <input type="date" id="date-from" class="w-36 mt-1 rounded-md shadow-sm sm:text-sm">
             </div>

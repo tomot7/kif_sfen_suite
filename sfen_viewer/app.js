@@ -103,6 +103,25 @@ async function enforceStorageLimit(extraBytes) {
   return { usage, quota: cappedQuota };
 }
 
+function normalizeDateString(raw) {
+  if (!raw) return '';
+  const ymdMatch = raw.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const jpMatch = raw.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+  if (jpMatch) {
+    const y = jpMatch[1];
+    const m = jpMatch[2].padStart(2, '0');
+    const d = jpMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return raw;
+}
+
 function parseData(text, filename = '') {
   const trimmed = text.trim();
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -139,7 +158,7 @@ function normalizeRecord(obj) {
   if (obj.s) {
     return {
       sfen: obj.s,
-      gameDate: obj.dt || obj.gameDate || obj.game_date || '',
+      gameDate: normalizeDateString(obj.dt || obj.gameDate || obj.game_date || ''),
       userName: obj.user_name || obj.userName || obj.u || '',
       count: obj.c || 0,
       senteWins: obj.sw || 0,
@@ -157,7 +176,7 @@ function normalizeRecord(obj) {
   }
   return {
     sfen: obj.sfen || '',
-    gameDate: obj.gameDate || obj.game_date || obj.date || '',
+    gameDate: normalizeDateString(obj.gameDate || obj.game_date || obj.date || ''),
     userName: obj.user_name || obj.userName || obj.targetUserName || '',
     count: obj.count || 0,
     senteWins: obj.senteWins || 0,
@@ -201,7 +220,8 @@ function parseCSV(text) {
   return lines.map(line => {
     const values = line.match(/(?:[^\s",]+|"[^"]*")+/g) || [];
     const sfen = (values[0] || '').replace(/"/g, '');
-    const gameDate = dateIndex !== -1 ? (values[dateIndex] || '').replace(/"/g, '') : '';
+    const gameDateRaw = dateIndex !== -1 ? (values[dateIndex] || '').replace(/"/g, '') : '';
+    const gameDate = normalizeDateString(gameDateRaw);
     const userName = userNameIndex !== -1 ? (values[userNameIndex] || '').replace(/"/g, '') : '';
     const count = parseInt(values[countIndex], 10);
     const comment = commentIndex !== -1 ? (values[commentIndex] || '').replace(/"/g, '') : '';
@@ -286,7 +306,7 @@ async function saveUserRecords(userName, records) {
     const normalized = {
       userName: name,
       sfen: rec.sfen,
-      gameDate: rec.gameDate || '',
+      gameDate: normalizeDateString(rec.gameDate || ''),
       count: rec.count || 0,
       senteWins: rec.senteWins || 0,
       goteWins: rec.goteWins || 0,
@@ -332,7 +352,8 @@ async function saveUserRecords(userName, records) {
   });
 }
 
-async function loadUserRecords(userName) {
+async function loadUserRecords(userName, options = {}) {
+  const aggregate = options.aggregate !== false;
   const idb = await initDb();
   return new Promise((resolve, reject) => {
     const tx = idb.transaction(STORE_POSITIONS, 'readonly');
@@ -346,7 +367,7 @@ async function loadUserRecords(userName) {
         records.push(cursor.value);
         cursor.continue();
       } else {
-        resolve(aggregateBySfen(records));
+        resolve(aggregate ? aggregateBySfen(records) : records);
       }
     };
     tx.onerror = () => reject(tx.error);
@@ -466,14 +487,14 @@ async function getUserDateRange(userName) {
   return new Promise((resolve, reject) => {
     const tx = idb.transaction(STORE_POSITIONS, 'readonly');
     const positions = tx.objectStore(STORE_POSITIONS);
-    const index = positions.index('userName_gameDate');
-    const range = IDBKeyRange.bound([userName, '0000-00-00'], [userName, '9999-12-31']);
+    const index = positions.index('userName');
+    const range = IDBKeyRange.only(userName);
     let min = '';
     let max = '';
     index.openCursor(range).onsuccess = e => {
       const cursor = e.target.result;
       if (cursor) {
-        const date = cursor.value.gameDate || '';
+        const date = normalizeDateString(cursor.value.gameDate || '');
         if (date) {
           if (!min || date < min) min = date;
           if (!max || date > max) max = date;
@@ -489,20 +510,27 @@ async function getUserDateRange(userName) {
 
 async function deleteByDateRange(userName, from, to) {
   const idb = await initDb();
-  const start = from || '0000-00-00';
-  const end = to || '9999-12-31';
+  const hasRange = !!from || !!to;
+  const start = normalizeDateString(from || '') || '0000-00-00';
+  const end = normalizeDateString(to || '') || '9999-12-31';
   return new Promise((resolve, reject) => {
     const tx = idb.transaction([STORE_POSITIONS, STORE_USERS], 'readwrite');
     const positions = tx.objectStore(STORE_POSITIONS);
     const users = tx.objectStore(STORE_USERS);
-    const index = positions.index('userName_gameDate');
-    const range = IDBKeyRange.bound([userName, start], [userName, end]);
+    const index = positions.index('userName');
+    const range = IDBKeyRange.only(userName);
     let deleted = 0;
     const now = new Date().toISOString();
     index.openCursor(range).onsuccess = e => {
       const cursor = e.target.result;
-      if (cursor) { cursor.delete(); deleted++; cursor.continue(); }
-      else {
+      if (cursor) {
+        const recordDate = normalizeDateString(cursor.value.gameDate || '');
+        const shouldDelete = recordDate
+          ? (recordDate >= start && recordDate <= end)
+          : !hasRange;
+        if (shouldDelete) { cursor.delete(); deleted++; }
+        cursor.continue();
+      } else {
         if (deleted > 0) {
           users.get(userName).onsuccess = ev => {
             const existing = ev.target.result;
@@ -520,18 +548,25 @@ async function deleteByDateRange(userName, from, to) {
 
 async function countByDateRange(userName, from, to) {
   const idb = await initDb();
-  const start = from || '0000-00-00';
-  const end = to || '9999-12-31';
+  const hasRange = !!from || !!to;
+  const start = normalizeDateString(from || '') || '0000-00-00';
+  const end = normalizeDateString(to || '') || '9999-12-31';
   return new Promise((resolve, reject) => {
     const tx = idb.transaction(STORE_POSITIONS, 'readonly');
     const positions = tx.objectStore(STORE_POSITIONS);
-    const index = positions.index('userName_gameDate');
-    const range = IDBKeyRange.bound([userName, start], [userName, end]);
+    const index = positions.index('userName');
+    const range = IDBKeyRange.only(userName);
     let count = 0;
     index.openCursor(range).onsuccess = e => {
       const cursor = e.target.result;
-      if (cursor) { count++; cursor.continue(); }
-      else resolve(count);
+      if (cursor) {
+        const recordDate = normalizeDateString(cursor.value.gameDate || '');
+        const shouldCount = recordDate
+          ? (recordDate >= start && recordDate <= end)
+          : !hasRange;
+        if (shouldCount) count++;
+        cursor.continue();
+      } else resolve(count);
     };
     tx.onerror = () => reject(tx.error);
   });
@@ -565,9 +600,10 @@ async function getUserStats() {
         const name = rec.userName || '未指定';
         const current = stats.get(name) || { name, count: 0, minDate: '', maxDate: '', bytes: 0 };
         current.count += 1;
-        if (rec.gameDate) {
-          if (!current.minDate || rec.gameDate < current.minDate) current.minDate = rec.gameDate;
-          if (!current.maxDate || rec.gameDate > current.maxDate) current.maxDate = rec.gameDate;
+        const date = normalizeDateString(rec.gameDate || '');
+        if (date) {
+          if (!current.minDate || date < current.minDate) current.minDate = date;
+          if (!current.maxDate || date > current.maxDate) current.maxDate = date;
         }
         const json = JSON.stringify(rec);
         current.bytes += encoder.encode(json).length;
@@ -638,5 +674,6 @@ window.SfenViewerApp = {
   updateComment,
   countUserPositions,
   getUserDateRange,
+  aggregateBySfen,
   getUserStats
 };

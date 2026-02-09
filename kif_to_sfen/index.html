@@ -321,8 +321,11 @@
                     try {
                         const kifText = e.target.result;
                         const { sfenList, result, senteName, goteName, gameDate } = parseKifWithMeta(kifText);
+                        const safeDate = gameDate || '';
                         sfenList.forEach(sfen => {
-                            const current = sfenCounts.get(sfen) || {
+                            const key = `${sfen}\u0000${safeDate}`;
+                            const current = sfenCounts.get(key) || {
+                                sfen,
                                 count: 0,
                                 senteWins: 0,
                                 goteWins: 0,
@@ -333,7 +336,7 @@
                                 userSenteDraws: 0,
                                 userGoteWins: 0,
                                 userGoteDraws: 0,
-                                gameDate: ''
+                                gameDate: safeDate
                             };
                             current.count += 1;
                             if (result === 'sente') current.senteWins += 1;
@@ -353,11 +356,7 @@
                                 }
                             }
 
-                            if (gameDate) {
-                                current.gameDate = pickLatestDate(current.gameDate, gameDate);
-                            }
-
-                            sfenCounts.set(sfen, current);
+                            sfenCounts.set(key, current);
                         });
                     } catch (e) {
                          console.warn(`ファイル ${file.name} の処理中にエラーが発生しました: ${e.message}`);
@@ -386,9 +385,9 @@
                 const excludeSingle = excludeSingleCheckbox.checked;
                 const minMoveNumber = parseInt(minMoveNumberInput.value, 10) || 1;
 
-                let sfenArray = Array.from(sfenCounts.entries());
-                const filteredSfen = sfenArray.filter(([sfen, stats]) => {
-                    const moveNumber = parseInt(sfen.split(' ').pop(), 10);
+                let sfenArray = Array.from(sfenCounts.values());
+                const filteredSfen = sfenArray.filter((stats) => {
+                    const moveNumber = parseInt(stats.sfen.split(' ').pop(), 10);
                     const isMoveOk = moveNumber >= minMoveNumber;
                     const isCountOk = !excludeSingle || stats.count > 1;
                     return isMoveOk && isCountOk;
@@ -399,7 +398,7 @@
                     return;
                 }
 
-                const sortedSfen = filteredSfen.sort((a, b) => b[1].count - a[1].count);
+                const sortedSfen = filteredSfen.sort((a, b) => b.count - a.count);
                 
                 let folderName = 'batch_result';
                 const firstFile = kifFiles[0];
@@ -422,8 +421,8 @@
                 let blob;
                 if (format === 'jsonl') {
                     filename += '.jsonl';
-                    const jsonlRows = sortedSfen.map(([sfen, stats]) => JSON.stringify({
-                        s: sfen,
+                    const jsonlRows = sortedSfen.map((stats) => JSON.stringify({
+                        s: stats.sfen,
                         dt: stats.gameDate || '',
                         user_name: targetUserName,
                         c: stats.count,
@@ -443,10 +442,10 @@
                 } else {
                     filename += '.csv';
                     const csvHeader = "SFEN,対局日時,user_name,出現回数,先手勝利数,後手勝利数,引分数,対象ユーザー名,ユーザー先手数,ユーザー先手勝利数,ユーザー先手引分数,ユーザー後手数,ユーザー後手勝利数,ユーザー後手引分数,コメント\n";
-                    const csvRows = sortedSfen.map(([sfen, stats]) => {
+                    const csvRows = sortedSfen.map((stats) => {
                         const safeUser = targetUserName.replace(/"/g, '""');
                         const safeDate = (stats.gameDate || '').replace(/"/g, '""');
-                        return `"${sfen}","${safeDate}","${safeUser}",${stats.count},${stats.senteWins},${stats.goteWins},${stats.draws},"${safeUser}",${stats.userSente},${stats.userSenteWins},${stats.userSenteDraws},${stats.userGote},${stats.userGoteWins},${stats.userGoteDraws},""`;
+                        return `"${stats.sfen}","${safeDate}","${safeUser}",${stats.count},${stats.senteWins},${stats.goteWins},${stats.draws},"${safeUser}",${stats.userSente},${stats.userSenteWins},${stats.userSenteDraws},${stats.userGote},${stats.userGoteWins},${stats.userGoteDraws},""`;
                     });
                     const csvContent = csvHeader + csvRows.join("\n");
                     blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });

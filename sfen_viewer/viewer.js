@@ -9,6 +9,7 @@ const statusMessage = document.getElementById('status-message');
 const minCountInput = document.getElementById('min-count');
 const minMoveInput = document.getElementById('min-move');
 const pageSizeInput = document.getElementById('page-size');
+const sortBySelect = document.getElementById('sort-by');
 const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
 const targetUserInput = document.getElementById('target-user');
@@ -141,12 +142,39 @@ async function applyDateRangeDefaults(userName) {
 
 async function loadUser(userName) {
   currentUserName = userName;
-  allRecords = await App.loadUserRecords(userName);
+  allRecords = await App.loadUserRecords(userName, { aggregate: false });
   targetUserName = allRecords.find(r => r.targetUserName)?.targetUserName || '';
   targetUserInput.value = targetUserName || '';
   await applyDateRangeDefaults(userName);
   currentPage = 1;
   renderFilteredBoards();
+}
+
+function normalizeDateForCompare(raw) {
+  if (!raw) return '';
+  const ymdMatch = raw.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const jpMatch = raw.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+  if (jpMatch) {
+    const y = jpMatch[1];
+    const m = jpMatch[2].padStart(2, '0');
+    const d = jpMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return raw;
+}
+
+function getWinRate(record, side) {
+  const senteWins = record.senteWins || 0;
+  const goteWins = record.goteWins || 0;
+  const decided = senteWins + goteWins;
+  if (!decided) return -1;
+  return side === 'sente' ? senteWins / decided : goteWins / decided;
 }
 
 function renderFilteredBoards() {
@@ -159,8 +187,9 @@ function renderFilteredBoards() {
   const minCount = parseInt(minCountInput.value, 10) || 1;
   const minMove = parseInt(minMoveInput.value, 10) || 1;
   const pageSize = Math.max(parseInt(pageSizeInput.value, 10) || 60, 1);
-  const dateFrom = dateFromInput.value || null;
-  const dateTo = dateToInput.value || null;
+  const sortBy = sortBySelect?.value || 'count-desc';
+  const dateFrom = normalizeDateForCompare(dateFromInput.value || '');
+  const dateTo = normalizeDateForCompare(dateToInput.value || '');
   const userFilterEnabled = userFilterEnableInput.checked;
   const maxUserWinRateRaw = parseFloat(userMaxWinrateInput.value);
   const maxUserWinRate = Number.isFinite(maxUserWinRateRaw)
@@ -173,15 +202,21 @@ function renderFilteredBoards() {
     return;
   }
 
-  const filteredRecords = allRecords.filter(record => {
-    const moveNumber = parseInt(record.sfen.split(' ')[3], 10);
-    if (record.count < minCount || moveNumber < minMove) return false;
-    if (dateFrom || dateTo) {
-      if (!record.gameDate) return false;
-      const recordDate = record.gameDate;
+  const dateFilteredRecords = (dateFrom || dateTo)
+    ? allRecords.filter(record => {
+      const recordDate = normalizeDateForCompare(record.gameDate || '');
+      if (!recordDate) return false;
       if (dateFrom && recordDate < dateFrom) return false;
       if (dateTo && recordDate > dateTo) return false;
-    }
+      return true;
+    })
+    : allRecords;
+
+  const aggregatedRecords = App.aggregateBySfen(dateFilteredRecords);
+
+  const filteredRecords = aggregatedRecords.filter(record => {
+    const moveNumber = parseInt(record.sfen.split(' ')[3], 10);
+    if (record.count < minCount || moveNumber < minMove) return false;
     if (userFilterEnabled) {
       const userWins = (record.userSenteWins || 0) + (record.userGoteWins || 0);
       const userDraws = (record.userSenteDraws || 0) + (record.userGoteDraws || 0);
@@ -194,19 +229,31 @@ function renderFilteredBoards() {
     return true;
   });
 
-  if (!filteredRecords.length) {
+  const sortedRecords = filteredRecords.slice().sort((a, b) => {
+    if (sortBy === 'sente-winrate') {
+      const diff = getWinRate(b, 'sente') - getWinRate(a, 'sente');
+      return diff !== 0 ? diff : (b.count || 0) - (a.count || 0);
+    }
+    if (sortBy === 'gote-winrate') {
+      const diff = getWinRate(b, 'gote') - getWinRate(a, 'gote');
+      return diff !== 0 ? diff : (b.count || 0) - (a.count || 0);
+    }
+    return (b.count || 0) - (a.count || 0);
+  });
+
+  if (!sortedRecords.length) {
     showStatus('指定された条件に一致する局面はありません。');
     return;
   }
 
-  const totalPages = Math.max(Math.ceil(filteredRecords.length / pageSize), 1);
+  const totalPages = Math.max(Math.ceil(sortedRecords.length / pageSize), 1);
   if (currentPage > totalPages) currentPage = totalPages;
   const startIndex = (currentPage - 1) * pageSize;
-  const pageRecords = filteredRecords.slice(startIndex, startIndex + pageSize);
+  const pageRecords = sortedRecords.slice(startIndex, startIndex + pageSize);
 
   displayBoards(pageRecords);
-  pagination.classList.toggle('hidden', filteredRecords.length <= pageSize);
-  pageInfo.textContent = `${currentPage} / ${totalPages} ページ (${filteredRecords.length} 件)`;
+  pagination.classList.toggle('hidden', sortedRecords.length <= pageSize);
+  pageInfo.textContent = `${currentPage} / ${totalPages} ページ (${sortedRecords.length} 件)`;
   prevPageButton.disabled = currentPage <= 1;
   nextPageButton.disabled = currentPage >= totalPages;
 
@@ -950,6 +997,7 @@ async function initializeApp() {
 minCountInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 minMoveInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
 pageSizeInput.addEventListener('input', () => { currentPage = 1; renderFilteredBoards(); });
+sortBySelect?.addEventListener('change', () => { currentPage = 1; renderFilteredBoards(); });
 prevPageButton.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderFilteredBoards(); } });
 nextPageButton.addEventListener('click', () => { currentPage++; renderFilteredBoards(); });
 userFilterEnableInput.addEventListener('change', renderFilteredBoards);
